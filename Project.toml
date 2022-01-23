@@ -3,6 +3,11 @@ uuid = "425c031d-9e5b-441b-a07e-4acde9a966a3"
 authors = ["Seyoon Ko <kos@ucla.edu> and contributors"]
 version = "0.1.0"
 
+[deps]
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+LoopVectorization = "bdcacae8-1622-11e9-2a5c-532679323890"
+Tullio = "bc48ee85-29a4-5162-ae0b-a64e1601d4bc"
+
 [compat]
 julia = "1.6"
 
