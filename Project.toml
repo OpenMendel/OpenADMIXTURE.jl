@@ -9,6 +9,7 @@ LoopVectorization = "bdcacae8-1622-11e9-2a5c-532679323890"
 Tullio = "bc48ee85-29a4-5162-ae0b-a64e1601d4bc"
 
 [compat]
+Tullio = "0.3"
 julia = "1.6"
 
 [extras]
