@@ -1,5 +1,5 @@
 function init_em!(d::AdmixData{T}, g::AbstractArray{T}, iter::Integer) where T
-    qf!(d.qf, d.q, d.f)
+    # qf!(d.qf, d.q, d.f)
     for _ in 1:iter
         # println(likelihood(g_numeric, f, q, qf))
         # qf!(d.qf, d.q, d.f)
@@ -7,8 +7,8 @@ function init_em!(d::AdmixData{T}, g::AbstractArray{T}, iter::Integer) where T
         em_f!(d, g)
         d.f .= d.f_next
         d.q .= d.q_next
-        qf!(d.qf, d.q, d.f)
-        println(loglikelihood(g, d.qf))
+        # qf!(d.qf, d.q, d.f)
+        # println(loglikelihood(g, d.qf))
     end
 end
 

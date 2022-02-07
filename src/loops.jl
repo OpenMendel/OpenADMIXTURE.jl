@@ -176,7 +176,7 @@ end
 @inline function loglikelihood_loop(g::AbstractArray{T}, q, f, qf_small, irange, jrange, K) where T
     oneT = one(T)
     twoT = 2one(T)
-    # firsti, firstj = first(irange), first(jrange)
+    firsti, firstj = first(irange), first(jrange)
     r = zero(T)
     @turbo for j in jrange
         for i in irange
@@ -224,129 +224,179 @@ end
 @inline function loglikelihood_loop(g::SnpLinAlg{T}, q, f, qf_small, irange, jrange, K) where T
     oneT = one(T)
     twoT = 2one(T)
-    # firsti, firstj = first(irange), first(jrange)
-    # qf_block!(qf_small, q, f, irange, jrange, K)
+    firsti, firstj = first(irange), first(jrange)
+    qf_block!(qf_small, q, f, irange, jrange, K)
     r = zero(T)
     gmat = g.s.data
     @turbo for j in jrange
         for i in irange
-            qf_local = zero(T)
-            for k in 1:K
-                qf_local += q[k, i] * f[k, j]
-            end
             blk = gmat[(i - 1) >> 2 + 1, j]
             re = (i - 1) % 4
             blk_shifted  = blk >> (re << 1)
             gij_pre = blk_shifted & 0x03
             gij = g_map[gij_pre + 0x01] + (gij_pre == 0x01) * g.μ[j]
-            r +=  (gij * log(qf_local))
+            r +=  (gij * log(qf_small[i-firsti+1, j-firstj+1])) + ((twoT - gij) * log(oneT - qf_small[i-firsti+1, j-firstj+1]))
+            
         end
     end
-    @turbo for j in jrange
-        for i in irange
-            qf_local = zero(T)
-            for k in 1:K
-                qf_local += q[k, i] * f[k, j]
-            end
-            blk = gmat[(i - 1) >> 2 + 1, j]
-            re = (i - 1) % 4
-            blk_shifted  = blk >> (re << 1)
-            gij_pre = blk_shifted & 0x03
-            gij = g_map[gij_pre + 0x01] + (gij_pre == 0x01) * g.μ[j]
-            r += ((twoT - gij) * log(oneT - qf_local))
-        end
-    end
-    # @tullio r = g[i, j] * log(qf[i, j]) + (2 - g[i, j]) * log(1 - qf[i, j])
     r
 end
+
 
 @inline function loglikelihood_loop_skipmissing(g::SnpLinAlg{T}, q, f, qf_small, irange, jrange, K) where T
     oneT = one(T)
     twoT = 2one(T)
-    # firsti, firstj = first(irange), first(jrange)
-    # qf_block!(qf_small, q, f, irange, jrange, K)
+    firsti, firstj = first(irange), first(jrange)
+    qf_block!(qf_small, q, f, irange, jrange, K)
     r = zero(T)
     gmat = g.s.data
     @turbo for j in jrange
         for i in irange
-            qf_local = zero(T)
-            for k in 1:K
-                qf_local += q[k, i] * f[k, j]
-            end
             blk = gmat[(i - 1) >> 2 + 1, j]
             re = (i - 1) % 4
             blk_shifted  = blk >> (re << 1)
             gij_pre = blk_shifted & 0x03
             gij = g_map[gij_pre + 0x01]
             nonmissing = nonmissing_map[gij_pre + 0x01]
-            r += nonmissing * ((gij * log(qf_local)))
+            r += nonmissing * ((gij * log(qf_small[i-firsti+1, j-firstj+1])) + ((twoT - gij) * log(oneT - qf_small[i-firsti+1, j-firstj+1])))
         end
     end
-    @turbo for j in jrange
-        for i in irange
-            qf_local = zero(T)
-            for k in 1:K
-                qf_local += q[k, i] * f[k, j]
-            end
-            blk = gmat[(i - 1) >> 2 + 1, j]
-            re = (i - 1) % 4
-            blk_shifted  = blk >> (re << 1)
-            gij_pre = blk_shifted & 0x03
-            gij = g_map[gij_pre + 0x01]
-            nonmissing = nonmissing_map[gij_pre + 0x01]
-            r += nonmissing * ((twoT - gij) * log(oneT - qf_local))
-        end
-    end
-    # @tullio r = g[i, j] * log(qf[i, j]) + (2 - g[i, j]) * log(1 - qf[i, j])
     r
 end
 
-@inline function em_q_loop!(q_next, g::AbstractArray{T}, q, f, qf, irange, jrange, K) where T
+@inline function em_q_loop!(q_next, g::AbstractArray{T}, q, f, qf_small, irange, jrange, K) where T
+    firsti, firstj = first(irange), first(jrange)
+    qf_block!(qf_small, q, f, irange, jrange, K)
     @turbo for j in jrange
         for i in irange
             for k in 1:K
                 gij = g[i, j]
-                q_next[k, i] += (gij * q[k, i] * f[k, j] / qf[i, j] + 
-                    (2 - gij) * q[k, i] * (1 - f[k, j]) / (1 - qf[i, j]))
+                q_next[k, i] += (gij * q[k, i] * f[k, j] / qf_small[i-firsti+1, j-firstj+1] + 
+                    (2 - gij) * q[k, i] * (1 - f[k, j]) / (1 - qf_small[i-firsti+1, j-firstj+1]))
             end
         end
     end
 end
 
-@inline function em_q_loop_skipmissing!(q_next, g::AbstractArray{T}, q, f, qf, irange, jrange, K) where T
+@inline function em_q_loop_skipmissing!(q_next, g::AbstractArray{T}, q, f, qf_small, irange, jrange, K) where T
+    firsti, firstj = first(irange), first(jrange)
+    qf_block!(qf_small, q, f, irange, jrange, K)
     @turbo for j in jrange
         for i in irange
             for k in 1:K
                 gij = g[i, j]
                 isnan = gij != gij
-                tmp = (gij * q[k, i] * f[k, j] / qf[i, j] + 
-                    (2 - gij) * q[k, i] * (1 - f[k, j]) / (1 - qf[i, j]))
+                tmp = (gij * q[k, i] * f[k, j] / qf_small[i-firsti+1, j-firstj+1] + 
+                    (2 - gij) * q[k, i] * (1 - f[k, j]) / (1 - qf_small[i-firsti+1, j-firstj+1]))
                 q_next[k, i] += isnan ? zero(T) : tmp
             end
         end
     end
 end
 
-@inline function em_f_loop!(f_next, g::AbstractArray{T}, q, f, f_tmp, qf, irange, jrange, K) where T
+@inline function em_q_loop!(q_next, g::SnpLinAlg{T}, q, f, qf_small, irange, jrange, K) where T
+    firsti, firstj = first(irange), first(jrange)
+    qf_block!(qf_small, q, f, irange, jrange, K)
+    gmat = g.s.data
     @turbo for j in jrange
         for i in irange
-            gij = g[i, j]
             for k in 1:K
-                f_tmp[k, j] += gij * q[k, i] * f[k, j] / qf[i, j]
-                f_next[k, j] += (2 - gij) * q[k, i] * (one(T) - f[k, j]) / (one(T) - qf[i, j])
+                blk = gmat[(i - 1) >> 2 + 1, j]
+                re = (i - 1) % 4
+                blk_shifted  = blk >> (re << 1)
+                gij_pre = blk_shifted & 0x03
+                gij = g_map[gij_pre + 0x01] + (gij_pre == 0x01) * g.μ[j]
+                q_next[k, i] += (gij * q[k, i] * f[k, j] / qf_small[i-firsti+1, j-firstj+1] + 
+                    (2 - gij) * q[k, i] * (1 - f[k, j]) / (1 - qf_small[i-firsti+1, j-firstj+1]))
             end
         end
     end
 end
 
-@inline function em_f_loop_skipmissing!(f_next, g::AbstractArray{T}, q, f, f_tmp, qf, irange, jrange, K) where T
+@inline function em_q_loop_skipmissing!(q_next, g::SnpLinAlg{T}, q, f, qf_small, irange, jrange, K) where T
+    firsti, firstj = first(irange), first(jrange)
+    qf_block!(qf_small, q, f, irange, jrange, K)
+    gmat = g.s.data
+    @turbo for j in jrange
+        for i in irange
+            for k in 1:K
+                blk = gmat[(i - 1) >> 2 + 1, j]
+                re = (i - 1) % 4
+                blk_shifted  = blk >> (re << 1)
+                gij_pre = blk_shifted & 0x03
+                gij = g_map[gij_pre + 0x01]
+                nonmissing = nonmissing_map[gij_pre + 0x01]
+                tmp = (gij * q[k, i] * f[k, j] / qf_small[i-firsti+1, j-firstj+1] + 
+                    (2 - gij) * q[k, i] * (1 - f[k, j]) / (1 - qf_small[i-firsti+1, j-firstj+1]))
+                q_next[k, i] += nonmissing * tmp
+            end
+        end
+    end
+end
+
+@inline function em_f_loop!(f_next, g::AbstractArray{T}, q, f, f_tmp, qf_small, irange, jrange, K) where T
+    firsti, firstj = first(irange), first(jrange)
+    qf_block!(qf_small, q, f, irange, jrange, K)
+    @turbo for j in jrange
+        for i in irange
+            gij = g[i, j]
+            for k in 1:K
+                f_tmp[k, j] += gij * q[k, i] * f[k, j] / qf_small[i-firsti+1, j-firstj+1]
+                f_next[k, j] += (2 - gij) * q[k, i] * (one(T) - f[k, j]) / (one(T) - qf_small[i-firsti+1, j-firstj+1])
+            end
+        end
+    end
+end
+
+@inline function em_f_loop_skipmissing!(f_next, g::AbstractArray{T}, q, f, f_tmp, qf_small, irange, jrange, K) where T
+    firsti, firstj = first(irange), first(jrange)
+    qf_block!(qf_small, q, f, irange, jrange, K)
     @turbo for j in jrange
         for i in irange
             gij = g[i, j]
             isnan = gij != gij
             for k in 1:K
-                f_tmp[k, j] += isnan ? zero(T) : gij * q[k, i] * f[k, j] / qf[i, j]
-                f_next[k, j] += isnan ? zero(T) : (2 - gij) * q[k, i] * (one(T) - f[k, j]) / (one(T) - qf[i, j])
+                f_tmp[k, j] += isnan ? zero(T) : gij * q[k, i] * f[k, j] / qf_small[i-firsti+1, j-firstj+1]
+                f_next[k, j] += isnan ? zero(T) : (2 - gij) * q[k, i] * (one(T) - f[k, j]) / (one(T) - qf_small[i-firsti+1, j-firstj+1])
+            end
+        end
+    end
+end
+
+@inline function em_f_loop!(f_next, g::SnpLinAlg{T}, q, f, f_tmp, qf_small, irange, jrange, K) where T
+    firsti, firstj = first(irange), first(jrange)
+    qf_block!(qf_small, q, f, irange, jrange, K)
+    gmat = g.s.data
+    @turbo for j in jrange
+        for i in irange
+            blk = gmat[(i - 1) >> 2 + 1, j]
+            re = (i - 1) % 4
+            blk_shifted  = blk >> (re << 1)
+            gij_pre = blk_shifted & 0x03
+            gij = g_map[gij_pre + 0x01] + (gij_pre == 0x01) * g.μ[j]
+            for k in 1:K
+                f_tmp[k, j] += gij * q[k, i] * f[k, j] / qf_small[i-firsti+1, j-firstj+1]
+                f_next[k, j] += (2 - gij) * q[k, i] * (one(T) - f[k, j]) / (one(T) - qf_small[i-firsti+1, j-firstj+1])
+            end
+        end
+    end
+end
+
+@inline function em_f_loop_skipmissing!(f_next, g::SnpLinAlg{T}, q, f, f_tmp, qf_small, irange, jrange, K) where T
+    firsti, firstj = first(irange), first(jrange)
+    qf_block!(qf_small, q, f, irange, jrange, K)
+    gmat = g.s.data
+    @turbo for j in jrange
+        for i in irange
+            blk = gmat[(i - 1) >> 2 + 1, j]
+            re = (i - 1) % 4
+            blk_shifted  = blk >> (re << 1)
+            gij_pre = blk_shifted & 0x03
+            gij = g_map[gij_pre + 0x01]
+            nonmissing = nonmissing_map[gij_pre + 0x01]
+            for k in 1:K
+                f_tmp[k, j] += nonmissing * (gij * q[k, i] * f[k, j] / qf_small[i-firsti+1, j-firstj+1])
+                f_next[k, j] += nonmissing * ((2 - gij) * q[k, i] * (one(T) - f[k, j]) / (one(T) - qf_small[i-firsti+1, j-firstj+1]))
             end
         end
     end
