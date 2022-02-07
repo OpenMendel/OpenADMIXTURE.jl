@@ -1,3 +1,11 @@
+function project_q!(b::AbstractMatrix{T}, idx::AbstractVector{Int}; pseudocount=T(1e-5)) where T
+    I = size(b, 2)
+    @inbounds for i in 1:I
+        project_q!(@view(b[:, i]), idx)
+    end
+    b
+end
+
 function project_q!(b::AbstractVector{T}, idx::AbstractVector{Int}; pseudocount=T(1e-5)) where T
     n = length(b)
     τ = one(T) - n * pseudocount
@@ -27,5 +35,8 @@ function project_q!(b::AbstractVector{T}, idx::AbstractVector{Int}; pseudocount=
 end
 
 function project_f!(b::AbstractArray{T}; pseudocount=T(1e-5)) where T
-    b .= min.(max.(b, pseudocount), one(T) - pseudocount)
+    @turbo for i in 1:length(b)
+        b[i] = min(max(b[i], pseudocount), one(T) - pseudocount)
+    end
+    # b .= min.(max.(b, pseudocount), one(T) - pseudocount)
 end

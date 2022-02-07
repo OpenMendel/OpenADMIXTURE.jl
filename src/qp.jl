@@ -3,8 +3,8 @@ Calculates the tableau used in minimizing the quadratic
 0.5 x' Q x + r' x, subject to Ax = b and parameter lower 
 and upper bounds.
 """
-function create_tableau(matrix_q::AbstractMatrix{Float64}, r::AbstractVector{Float64},
-  matrix_a::AbstractMatrix{Float64}, b::AbstractVector{Float64}, x::AbstractVector{Float64})
+function create_tableau(matrix_q::AbstractMatrix{T}, r::AbstractVector{T},
+  matrix_a::AbstractMatrix{T}, b::AbstractVector{T}, x::AbstractVector{T}) where T
 
   m = size(matrix_a, 1)
   #
@@ -22,14 +22,14 @@ function create_tableau(matrix_q::AbstractMatrix{Float64}, r::AbstractVector{Flo
     matrix_p = matrix_v * matrix_q * matrix_v'
     mu = 0.0
     for i = 1:m
-      mu = max((norm(matrix_p[:, i], 1) - 2.0 * matrix_p[i, i]) / d[i]^2, mu)
+      mu = max((norm(matrix_p[:, i], 1) - 2matrix_p[i, i]) / d[i]^2, mu)
     end
-    mu = 2.0 * mu
+    mu = T(2mu)
     #
     # Now create the tableau.
     #
     tableau = [matrix_q + mu * matrix_a' * matrix_a matrix_a' (-r);
-               matrix_a zeros(m, m) b - matrix_a * x;
+               matrix_a zeros(T, m, m) b - matrix_a * x;
                -r' (b - matrix_a * x)' 0]
   end
   return tableau
@@ -45,10 +45,11 @@ Proceedings of the Eleventh Annual Symposium on the Interface.
 Gallant AR, Gerig TM, editors. Institute of Statistics,
 North Carolina State University.
 """
-function quadratic_program(tableau::AbstractMatrix{Float64}, par::AbstractVector{Float64},
-  pmin::AbstractVector{Float64}, pmax::AbstractVector{Float64}, p::Int, c::Int)
+function quadratic_program!(delta::AbstractVector{T}, tableau::AbstractMatrix{T}, par::AbstractVector{T},
+  pmin::AbstractVector{T}, pmax::AbstractVector{T}, p::Int, c::Int) where T
 
-  delta = zeros(Float64, size(par))
+  # delta = zeros(T, size(par))
+  fill!(delta, zero(T))
   #
   # See function create_tableau for the construction of the tableau.
   # For checking tolerance, set diag to the diagonal elements of tableau.
@@ -149,7 +150,7 @@ end # function quadratic_program
 """
 Sweeps or inverse sweeps the symmetric tableau A on its kth diagonal entry.
 """
-function sweep!(matrix_a::AbstractMatrix{Float64}, k::Int, inverse::Bool = false)
+function sweep!(matrix_a::AbstractMatrix{T}, k::Int, inverse::Bool = false) where T
 
   p = 1.0 / matrix_a[k, k]
   v = matrix_a[:, k]
@@ -161,7 +162,10 @@ function sweep!(matrix_a::AbstractMatrix{Float64}, k::Int, inverse::Bool = false
     v[k] = -1.0
   end
   for i = 1:size(matrix_a, 1)
-    pv = p * v[i]
-    matrix_a[:, i] = matrix_a[:, i] - pv * v
+    pv = p * v[i] # scalar
+    for j in 1:size(matrix_a, 1)
+      matrix_a[j, i] = matrix_a[j, i] - pv * v[j]
+    end
+    # matrix_a[:, i] .= matrix_a[:, i] .- pv * v
   end
 end # function sweep!
