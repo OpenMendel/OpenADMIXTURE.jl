@@ -106,7 +106,8 @@ Gallant AR, Gerig TM, editors. Institute of Statistics,
 North Carolina State University.
 """
 function quadratic_program!(delta::AbstractVector{T}, tableau::AbstractMatrix{T}, par::AbstractVector{T},
-    pmin::AbstractVector{T}, pmax::AbstractVector{T}, p::Int, c::Int, d::AbstractVector{T}, tmp::AbstractVector{T}) where T
+    pmin::AbstractVector{T}, pmax::AbstractVector{T}, p::Int, c::Int, d::AbstractVector{T}, 
+    tmp::AbstractVector{T}, swept::BitVector) where T
 
     # delta = zeros(T, size(par))
     fill!(delta, zero(T))
@@ -131,7 +132,8 @@ function quadratic_program!(delta::AbstractVector{T}, tableau::AbstractMatrix{T}
             sweep!(tableau, i, tmp, false)
         end
     end
-    swept = trues(p)
+    # swept = trues(p)
+    fill!(swept, true)
     for i = p + 1:p + c
         if tableau[i, i] >= zero(T)
             return 0

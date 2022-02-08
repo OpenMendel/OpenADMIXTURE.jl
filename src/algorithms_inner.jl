@@ -84,13 +84,12 @@ function em_f!(d::AdmixData{T}, g::AbstractArray{T}, mode=:base) where T
     # @tullio f_new[k, j] = f_tmp[k, j] / (f_tmp[k, j] + f_new[k, j])
 end
 
-const tau_schedule = [collect(0.7^i for i in 1:10); 0.01; 0.001; 0.0001; 
-    0.00001; 0.000001; 0.0000001; 0.00000001]
+const tau_schedule = [collect(0.7^i for i in 1:10)]
 
 function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false) where T
 # function update_q!(q_next, g::AbstractArray{T}, q, f, qdiff, XtX, Xtz, qf) where T
     I, J, K = d.I, d.J, d.K
-    qdiff, XtX, Xtz, qf, qf_small = d.q_tmp, d.XtX_q, d.Xtz_q, d.qf, d.qf_small
+    qdiff, XtX, Xtz, qf_small = d.q_tmp, d.XtX_q, d.Xtz_q, d.qf_small
     q_next = update2 ? d.q_next2 : d.q_next
     q      = update2 ? d.q_next  : d.q
     f      = update2 ? d.f_next  : d.f
@@ -111,18 +110,34 @@ function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false) where T
         # b = [one(T)]
         pmin = zeros(T, K)
         pmax = ones(T, K)
+        # XtX_SA = reinterpret(reshape, SMatrix{K,K,Float64, K*K}, reshape(XtX, K*K, :))
+        # Xtz_SA = reinterpret(reshape, SVector{K, Float64}, Xtz)
+        # q_SA   = reinterpret(reshape, SVector{K, Float64}, q)
+        # qdiff_SA   = reinterpret(reshape, SVector{K, Float64}, qdiff)
+
+        # XtX_ = @MMatrix zeros(T, K, K)
+        # Xtz_ = @MVector zeros(T, K)
+        # q_   = @MVector zeros(T, K)
+        # qdiff_ = @MVector zeros(T, K)
         @inbounds  for i in 1:I
+            # XtX_ = unsafe_wrap(Array{T,2}, pointer(XtX, (i-1) * K * K + 1), (K,K))
             XtX_ = view(XtX, :, :, i)
+            # Xtz_ = unsafe_wrap(Array{T, 1}, pointer(Xtz, (i-1) * K + 1), (K,))
             Xtz_ = view(Xtz, :, i)
+            # q_   = unsafe_wrap(Array{T, 1}, pointer(q, (i-1) * K + 1), (K,))
             q_ = view(q, :, i)
+            # qdiff_ = unsafe_wrap(Array{T, 1}, pointer(qdiff, (i-1) * K + 1), (K,))
             qdiff_ = view(qdiff, :, i)
             
             create_tableau!(d.tableau_k2, XtX_, Xtz_, q_, d.v_kk, d.tmp_k, true)
             # tableau = create_tableau(XtX_, Xtz_, matrix_a, b, q_)
             quadratic_program!(qdiff_, d.tableau_k2, q_, pmin, pmax, K, 1, 
-                d.tmp_k2, d.tmp_k2_) 
+                d.tmp_k2, d.tmp_k2_, d.swept) 
         end
-        q_next .= q .+ qdiff
+        for i in 1:length(q)
+            q_next[i] = q[i] + qdiff[i]
+        end
+        # q_next .= q .+ qdiff
         project_q!(q_next, d.idx)
     end
 
@@ -156,7 +171,7 @@ end
 function update_f!(d::AdmixData{T}, g::AbstractArray{T}, update2=false) where T
 # function update_f!(f_next, g::AbstractArray{T}, f, q, fdiff, XtX, Xtz, qf) where T
     I, J, K = d.I, d.J, d.K
-    fdiff, XtX, Xtz, qf, qf_small = d.f_tmp, d.XtX_f, d.Xtz_f, d.qf, d.qf_small
+    fdiff, XtX, Xtz, qf_small = d.f_tmp, d.XtX_f, d.Xtz_f, d.qf_small
     f_next = update2 ? d.f_next2 : d.f_next
     q      = update2 ? d.q_next2 : d.q_next
     f      = update2 ? d.f_next  : d.f
@@ -177,20 +192,27 @@ function update_f!(d::AdmixData{T}, g::AbstractArray{T}, update2=false) where T
         pmax = ones(T, K)
         
         @inbounds for j in 1:J
+            # XtX_ = unsafe_wrap(Array{T, 2}, pointer(XtX, (j-1) * K * K + 1), (K,K))
             XtX_ = view(XtX, :, :, j)
+            # Xtz_ = unsafe_wrap(Array{T, 1}, pointer(Xtz, (j-1) * K + 1), (K,))
             Xtz_ = view(Xtz, :, j)
+            # f_ = unsafe_wrap(Array{T, 1}, pointer(f, (j-1) * K + 1), (K,))
             f_ = view(f, :, j)
+            # fdiff_ = unsafe_wrap(Array{T, 1}, pointer(fdiff, (j-1) * K + 1), (K,))
             fdiff_ = view(fdiff, :, j)
             
             create_tableau!(d.tableau_k1, XtX_, Xtz_, f_, d.v_kk, d.tmp_k, false)
             # tableau = create_tableau(XtX_, Xtz_, matrix_a, b, f_)
             # println(diag(tableau))
             quadratic_program!(fdiff_, d.tableau_k1, f_, pmin, pmax, K, 0,
-                d.tmp_k1, d.tmp_k1_) 
+                d.tmp_k1, d.tmp_k1_, d.swept) 
             # fdiff_ .= fd     
      
         end
-        f_next .= f .+ fdiff
+        for i in 1:length(f)
+            f_next[i] = f[i] + fdiff[i]
+        end
+        # f_next .= f .+ fdiff
         project_f!(f_next)
         println(maximum(abs.(fdiff)))
     end

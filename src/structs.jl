@@ -30,13 +30,14 @@ mutable struct AdmixData{T}
     Xtz_q       ::Matrix{T}   # K x I
     XtX_f       ::Array{T, 3} # K x K x J
     Xtz_f       ::Matrix{T}   # K x J
-    qf          ::Matrix{T}   # I x J
+    # qf          ::Matrix{T}   # I x J
     qf_small    ::Matrix{T}   # 64 x 64
-    qf_thin     ::Matrix{T}
+    # qf_thin     ::Matrix{T}
 
     U           ::Matrix{T}   # K(I + J) x Q
     V           ::Matrix{T}   # K(I + J) x Q
 
+    # for QP
     v_kk        ::Matrix{T}   # K x K, a full svd of ones(1, K)
     tmp_k       ::Vector{T}
     tmp_k1      ::Vector{T}
@@ -45,6 +46,7 @@ mutable struct AdmixData{T}
     tmp_k2_      ::Vector{T}
     tableau_k1  ::Matrix{T}   # (K + 1) x (K + 1)
     tableau_k2  ::Matrix{T}   # (K + 2) x (K + 2)
+    swept       ::BitVector
 
     ll_prev     ::T
     ll_new      ::T
@@ -82,10 +84,10 @@ function AdmixData{T}(I, J, K, Q; seed=nothing) where T
 
     XtX_f = rand(T, K, K, J)
     Xtz_f = rand(T, K, J)
-    qf = rand(T, I, J);
-    maxL = tile_maxiter(typeof(qf))
+    # qf = rand(T, I, J);
+    maxL = tile_maxiter(typeof(Xtz_f))
     qf_small = rand(T, maxL, maxL)
-    qf_thin  = rand(T, I, maxL)
+    # qf_thin  = rand(T, I, maxL)
     # f_tmp = similar(f)
     # q_tmp = similar(q);
 
@@ -102,6 +104,7 @@ function AdmixData{T}(I, J, K, Q; seed=nothing) where T
     tmp_k2_ = similar(tmp_k2)
     tableau_k1 = Matrix{T}(undef, K+1, K+1)
     tableau_k2 = Matrix{T}(undef, K+2, K+2)
+    swept = trues(K)
     # U_q = view(reshape(U, K, (I+J), Q), :, 1:I, :)
     # U_f = view(reshape(U, K, (I+J), Q), :, (I+1):(I+J), :)
     snptmp = rand(T, 4)
@@ -110,8 +113,8 @@ function AdmixData{T}(I, J, K, Q; seed=nothing) where T
         x_flat, x_next_flat, x_next2_flat, x_tmp_flat,
         q, q_next, q_next2, q_tmp, f, f_next, f_next2, f_tmp, 
         XtX_q, Xtz_q, XtX_f, Xtz_f, 
-        qf, qf_small, qf_thin, U, V, vt, 
+        qf_small, U, V, vt, 
         tmp_k, tmp_k1, tmp_k1_, tmp_k2, tmp_k2_, 
-        tableau_k1, tableau_k2,
+        tableau_k1, tableau_k2, swept,
         zero(T), zero(T), Array{Int}(undef, K), snptmp)
 end

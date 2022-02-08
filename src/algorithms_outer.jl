@@ -13,8 +13,8 @@ function init_em!(d::AdmixData{T}, g::AbstractArray{T}, iter::Integer) where T
 end
 
 function admixture_qn!(d::AdmixData{T}, g::AbstractArray{T}, iter::Int=30, rtol=1e-7) where T
-    qf!(d.qf, d.q, d.f)
-    ll_prev = loglikelihood(g, d.qf)
+    # qf!(d.qf, d.q, d.f)
+    ll_prev = loglikelihood(g, d.q, d.f, d.qf_small, d.K)
     d.ll_new = ll_prev
     println(ll_prev)
     for i in 1:iter
@@ -36,8 +36,8 @@ function admixture_qn!(d::AdmixData{T}, g::AbstractArray{T}, iter::Int=30, rtol=
             update_QN!(d.x_tmp_flat, d.x_next_flat, d.x_flat, U_part, V_part)
             project_f!(d.f_tmp)
             project_q!(d.q_tmp, d.idx)
-            qf!(d.qf, d.q_tmp, d.f_tmp)
-            ll_qn = loglikelihood(g, d.qf)
+            # qf!(d.qf, d.q_tmp, d.f_tmp)
+            ll_qn = loglikelihood(g, d.q_tmp, d.f_tmp, d.qf_small, d.K)
             if ll_prev < ll_qn
                 d.x .= d.x_tmp
                 d.ll_new = ll_qn
