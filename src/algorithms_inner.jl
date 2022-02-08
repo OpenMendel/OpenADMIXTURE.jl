@@ -107,8 +107,8 @@ function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false) where T
     @time begin
         # for QP formulation
         Xtz .*= -1 
-        matrix_a = ones(T, 1, K)
-        b = [one(T)]
+        # matrix_a = ones(T, 1, K)
+        # b = [one(T)]
         pmin = zeros(T, K)
         pmax = ones(T, K)
         @inbounds  for i in 1:I
@@ -117,9 +117,10 @@ function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false) where T
             q_ = view(q, :, i)
             qdiff_ = view(qdiff, :, i)
             
-            tableau = create_tableau(XtX_, Xtz_, matrix_a, b, q_)
-            itr, qd = quadratic_program!(qdiff_, tableau, q_, pmin, pmax, K, 1) 
-            # qdiff_ .= qd
+            create_tableau!(d.tableau_k2, XtX_, Xtz_, q_, d.v_kk, d.tmp_k, true)
+            # tableau = create_tableau(XtX_, Xtz_, matrix_a, b, q_)
+            quadratic_program!(qdiff_, d.tableau_k2, q_, pmin, pmax, K, 1, 
+                d.tmp_k2, d.tmp_k2_) 
         end
         q_next .= q .+ qdiff
         project_q!(q_next, d.idx)
@@ -127,7 +128,7 @@ function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false) where T
 
     begin
         # qf!(qf, q_next, f)
-        @time d.ll_new = loglikelihood(g, q, f, qf_small, K)
+        @time d.ll_new = loglikelihood(g, q_next, f, qf_small, K)
         println("update_q: ", d.ll_new)
         tau = 1.0
         for cnt in 1:length(tau_schedule)
@@ -138,16 +139,16 @@ function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false) where T
             tau = tau_schedule[cnt]
             q_next .= q .+ tau .* qdiff
             project_q!(q_next, d.idx)
-            qf!(qf, q_next, f)
+            # qf!(qf, q_next, f)
             d.ll_new = loglikelihood(g, q, f, qf_small, K)
         end
         println(maximum(abs.(qdiff)))
         println("Update failed. Falling back to EM update.")
-        qf!(qf, q, f)
+        # qf!(qf, q, f)
         em_q!(d, g, update2 ? :fallback2 : :fallback)
         project_q!(q_next, d.idx)
-        qf!(qf, q_next, f)
-        d.ll_new = loglikelihood(g, q, f, qf_small, K)
+        # qf!(qf, q_next, f)
+        d.ll_new = loglikelihood(g, q_next, f, qf_small, K)
         return
     end
 end
@@ -167,13 +168,11 @@ function update_f!(d::AdmixData{T}, g::AbstractArray{T}, update2=false) where T
     # @time tiler_1d!(update_f_loop!, typeof(XtX), (XtX, Xtz, g, q, f, qf_thin), 1:I, 1:J, K)
     @time tiler!(update_f_loop!, typeof(XtX), (XtX, Xtz, g, q, f, qf_small), 1:I, 1:J, K)
     # @time update_f_loop!(XtX, Xtz, g, q, qf, 1:I, 1:J, K)
-    # not tiling f loop performs better... 
-    # maybe memory access pattern for f update is pretty, and we have overhead for tiling.
 
     @time begin       
         Xtz .*= -1 
-        matrix_a = ones(T, 0, 0)
-        b = ones(T, 0)
+        # matrix_a = ones(T, 0, 0)
+        # b = ones(T, 0)
         pmin = zeros(T, K)
         pmax = ones(T, K)
         
@@ -183,9 +182,11 @@ function update_f!(d::AdmixData{T}, g::AbstractArray{T}, update2=false) where T
             f_ = view(f, :, j)
             fdiff_ = view(fdiff, :, j)
             
-            tableau = create_tableau(XtX_, Xtz_, matrix_a, b, f_)
+            create_tableau!(d.tableau_k1, XtX_, Xtz_, f_, d.v_kk, d.tmp_k, false)
+            # tableau = create_tableau(XtX_, Xtz_, matrix_a, b, f_)
             # println(diag(tableau))
-            itr, fd = quadratic_program!(fdiff_, tableau, f_, pmin, pmax, K, 0) 
+            quadratic_program!(fdiff_, d.tableau_k1, f_, pmin, pmax, K, 0,
+                d.tmp_k1, d.tmp_k1_) 
             # fdiff_ .= fd     
      
         end
@@ -197,8 +198,8 @@ function update_f!(d::AdmixData{T}, g::AbstractArray{T}, update2=false) where T
 
     begin
         tau = 1.0
-        qf!(qf, q, f_next)
-        @time d.ll_new = loglikelihood(g, q, f, qf_small, K)
+        # qf!(qf, q, f_next)
+        @time d.ll_new = loglikelihood(g, q, f_next, qf_small, K)
         println("update_f: ", d.ll_new)
         for cnt in 1:length(tau_schedule)
             if d.ll_prev < d.ll_new
@@ -208,16 +209,16 @@ function update_f!(d::AdmixData{T}, g::AbstractArray{T}, update2=false) where T
             tau = tau_schedule[cnt]
             f_next .= f .+ tau .* fdiff
             project_f!(f_next)
-            qf!(qf, q, f_next)
-            d.ll_new = loglikelihood(g, q, f, qf_small, K)
+            # qf!(qf, q, f_next)
+            d.ll_new = loglikelihood(g, q, f_next, qf_small, K)
         end
         println(maximum(abs.(fdiff)))
         println("Update failed. Falling back to EM update.")
-        qf!(qf, q, f)
+        # qf!(qf, q, f)
         em_f!(d, g, update2 ? :fallback2 : :fallback)
         project_f!(f_next)
-        qf!(qf, q, f_next)
-        d.ll_new = loglikelihood(g, q, f, qf_small, K)
+        # qf!(qf, q, f_next)
+        d.ll_new = loglikelihood(g, q, f_next, qf_small, K)
         return 
     end
 end
