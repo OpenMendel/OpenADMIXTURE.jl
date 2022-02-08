@@ -86,13 +86,13 @@ function tiler_scalar_1d(ftn::F, ::Type{T}, z::RT, arrs::Tuple, irange, jrange, 
     end
 end
 
-"""
-    qf!(qf, q, f)
-Computes q * f, in-place.
-"""
-function qf!(qf, q, f)
-    @tullio qf[i, j] = q[k, i] * f[k, j]
-end
+# """
+#     qf!(qf, q, f)
+# Computes q * f, in-place.
+# """
+# function qf!(qf, q, f)
+#     @tullio qf[i, j] = q[k, i] * f[k, j]
+# end
 
 @inline function qf_block!(qf_small::AbstractArray{T}, q, f, irange, jrange, K) where T
     fill!(qf_small, zero(T))

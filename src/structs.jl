@@ -1,5 +1,10 @@
-SAT{T} = SubArray{T, 2, Matrix{T}, 
+const SAT{T} = SubArray{T, 2, Matrix{T}, 
     Tuple{Base.Slice{Base.OneTo{Int}}, UnitRange{Int}}, true}
+const TwoDSlice{T} = Vector{SubArray{T, 2, Array{T, 3}, 
+    Tuple{Base.Slice{Base.OneTo{Int64}}, Base.Slice{Base.OneTo{Int64}}, Int64}, true}}
+const OneDSlice{T} = Vector{SubArray{T, 1, Matrix{T}, 
+    Tuple{Base.Slice{Base.OneTo{Int64}}, Int64}, true}}
+
 mutable struct AdmixData{T}
     I           ::Int
     J           ::Int
@@ -30,9 +35,21 @@ mutable struct AdmixData{T}
     Xtz_q       ::Matrix{T}   # K x I
     XtX_f       ::Array{T, 3} # K x K x J
     Xtz_f       ::Matrix{T}   # K x J
-    # qf          ::Matrix{T}   # I x J
+
+    # views
+    qv          :: OneDSlice{T}
+    q_nextv     :: OneDSlice{T}
+    q_tmpv      :: OneDSlice{T}
+    fv          :: OneDSlice{T}
+    f_nextv     :: OneDSlice{T}
+    f_tmpv      :: OneDSlice{T}
+
+    XtX_qv      :: TwoDSlice{T}
+    Xtz_qv      :: OneDSlice{T}
+    XtX_fv      :: TwoDSlice{T}
+    Xtz_fv      :: OneDSlice{T}
+
     qf_small    ::Matrix{T}   # 64 x 64
-    # qf_thin     ::Matrix{T}
 
     U           ::Matrix{T}   # K(I + J) x Q
     V           ::Matrix{T}   # K(I + J) x Q
@@ -84,6 +101,20 @@ function AdmixData{T}(I, J, K, Q; seed=nothing) where T
 
     XtX_f = rand(T, K, K, J)
     Xtz_f = rand(T, K, J)
+
+    qv          = [view(q, :, i) for i in 1:I]
+    q_nextv     = [view(q_next, :, i) for i in 1:I]
+    q_tmpv     = [view(q_tmp, :, i) for i in 1:I]
+    fv          = [view(f, :, j) for j in 1:J]
+    f_nextv     = [view(f_next, :, j) for j in 1:J]
+    f_tmpv     = [view(f_tmp, :, j) for j in 1:J]
+
+    XtX_qv      = [view(XtX_q, :, :, i) for i in 1:I]
+    Xtz_qv      = [view(Xtz_q, :, i) for i in 1:I]
+    XtX_fv      = [view(XtX_f, :, :, j) for j in 1:J]
+    Xtz_fv      = [view(Xtz_f, :, j) for j in 1:J]
+
+
     # qf = rand(T, I, J);
     maxL = tile_maxiter(typeof(Xtz_f))
     qf_small = rand(T, maxL, maxL)
@@ -113,6 +144,7 @@ function AdmixData{T}(I, J, K, Q; seed=nothing) where T
         x_flat, x_next_flat, x_next2_flat, x_tmp_flat,
         q, q_next, q_next2, q_tmp, f, f_next, f_next2, f_tmp, 
         XtX_q, Xtz_q, XtX_f, Xtz_f, 
+        qv, q_nextv, q_tmpv, fv, f_nextv, f_tmpv, XtX_qv, Xtz_qv, XtX_fv, Xtz_fv,
         qf_small, U, V, vt, 
         tmp_k, tmp_k1, tmp_k1_, tmp_k2, tmp_k2_, 
         tableau_k1, tableau_k2, swept,

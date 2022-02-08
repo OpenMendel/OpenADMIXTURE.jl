@@ -84,7 +84,7 @@ function em_f!(d::AdmixData{T}, g::AbstractArray{T}, mode=:base) where T
     # @tullio f_new[k, j] = f_tmp[k, j] / (f_tmp[k, j] + f_new[k, j])
 end
 
-const tau_schedule = [collect(0.7^i for i in 1:10)]
+const tau_schedule = collect(0.7^i for i in 1:10)
 
 function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false) where T
 # function update_q!(q_next, g::AbstractArray{T}, q, f, qdiff, XtX, Xtz, qf) where T
@@ -93,6 +93,10 @@ function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false) where T
     q_next = update2 ? d.q_next2 : d.q_next
     q      = update2 ? d.q_next  : d.q
     f      = update2 ? d.f_next  : d.f
+    qv     = update2 ? d.q_nextv : d.qv
+    qdiffv = d.q_tmpv
+    XtXv   = d.XtX_qv
+    Xtzv   = d.Xtz_qv
 
     # qf!(qf, q, f)
     d.ll_prev = d.ll_new # loglikelihood(g, qf)
@@ -103,7 +107,7 @@ function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false) where T
     @time tiler!(update_q_loop!, typeof(XtX), (XtX, Xtz, g, q, f, qf_small), 1:I, 1:J, K)
     #update_q_loop!(XtX, Xtz, g, f, qf, 1:I, 1:J, K)
 
-    @time begin
+    begin
         # for QP formulation
         Xtz .*= -1 
         # matrix_a = ones(T, 1, K)
@@ -121,21 +125,23 @@ function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false) where T
         # qdiff_ = @MVector zeros(T, K)
         @inbounds  for i in 1:I
             # XtX_ = unsafe_wrap(Array{T,2}, pointer(XtX, (i-1) * K * K + 1), (K,K))
-            XtX_ = view(XtX, :, :, i)
+            XtX_ = XtXv[i]#view(XtX, :, :, i)
             # Xtz_ = unsafe_wrap(Array{T, 1}, pointer(Xtz, (i-1) * K + 1), (K,))
-            Xtz_ = view(Xtz, :, i)
+            Xtz_ = Xtzv[i]#view(Xtz, :, i)
             # q_   = unsafe_wrap(Array{T, 1}, pointer(q, (i-1) * K + 1), (K,))
-            q_ = view(q, :, i)
+            q_ = qv[i]#view(q, :, i)
             # qdiff_ = unsafe_wrap(Array{T, 1}, pointer(qdiff, (i-1) * K + 1), (K,))
-            qdiff_ = view(qdiff, :, i)
+            qdiff_ = qdiffv[i]#view(qdiff, :, i)
             
             create_tableau!(d.tableau_k2, XtX_, Xtz_, q_, d.v_kk, d.tmp_k, true)
             # tableau = create_tableau(XtX_, Xtz_, matrix_a, b, q_)
             quadratic_program!(qdiff_, d.tableau_k2, q_, pmin, pmax, K, 1, 
                 d.tmp_k2, d.tmp_k2_, d.swept) 
         end
-        for i in 1:length(q)
-            q_next[i] = q[i] + qdiff[i]
+        @turbo for i in 1:I
+            for k in 1:K
+                q_next[k, i] = q[k, i] + qdiff[k, i]
+            end
         end
         # q_next .= q .+ qdiff
         project_q!(q_next, d.idx)
@@ -155,7 +161,7 @@ function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false) where T
             q_next .= q .+ tau .* qdiff
             project_q!(q_next, d.idx)
             # qf!(qf, q_next, f)
-            d.ll_new = loglikelihood(g, q, f, qf_small, K)
+            d.ll_new = loglikelihood(g, q_next, f, qf_small, K)
         end
         println(maximum(abs.(qdiff)))
         println("Update failed. Falling back to EM update.")
@@ -175,6 +181,11 @@ function update_f!(d::AdmixData{T}, g::AbstractArray{T}, update2=false) where T
     f_next = update2 ? d.f_next2 : d.f_next
     q      = update2 ? d.q_next2 : d.q_next
     f      = update2 ? d.f_next  : d.f
+    fv     = update2 ? d.f_nextv : d.fv
+    fdiffv = d.f_tmpv
+    XtXv   = d.XtX_fv
+    Xtzv   = d.Xtz_fv
+
 
     # qf!(qf, q, f)
     d.ll_prev = d.ll_new # loglikelihood(g, qf)
@@ -184,7 +195,7 @@ function update_f!(d::AdmixData{T}, g::AbstractArray{T}, update2=false) where T
     @time tiler!(update_f_loop!, typeof(XtX), (XtX, Xtz, g, q, f, qf_small), 1:I, 1:J, K)
     # @time update_f_loop!(XtX, Xtz, g, q, qf, 1:I, 1:J, K)
 
-    @time begin       
+    begin       
         Xtz .*= -1 
         # matrix_a = ones(T, 0, 0)
         # b = ones(T, 0)
@@ -193,13 +204,13 @@ function update_f!(d::AdmixData{T}, g::AbstractArray{T}, update2=false) where T
         
         @inbounds for j in 1:J
             # XtX_ = unsafe_wrap(Array{T, 2}, pointer(XtX, (j-1) * K * K + 1), (K,K))
-            XtX_ = view(XtX, :, :, j)
+            XtX_ = XtXv[j]# view(XtX, :, :, j)
             # Xtz_ = unsafe_wrap(Array{T, 1}, pointer(Xtz, (j-1) * K + 1), (K,))
-            Xtz_ = view(Xtz, :, j)
+            Xtz_ = Xtzv[j]#view(Xtz, :, j)
             # f_ = unsafe_wrap(Array{T, 1}, pointer(f, (j-1) * K + 1), (K,))
-            f_ = view(f, :, j)
+            f_ = fv[j] #view(f, :, j)
             # fdiff_ = unsafe_wrap(Array{T, 1}, pointer(fdiff, (j-1) * K + 1), (K,))
-            fdiff_ = view(fdiff, :, j)
+            fdiff_ = fdiffv[j] #view(fdiff, :, j)
             
             create_tableau!(d.tableau_k1, XtX_, Xtz_, f_, d.v_kk, d.tmp_k, false)
             # tableau = create_tableau(XtX_, Xtz_, matrix_a, b, f_)
@@ -209,8 +220,10 @@ function update_f!(d::AdmixData{T}, g::AbstractArray{T}, update2=false) where T
             # fdiff_ .= fd     
      
         end
-        for i in 1:length(f)
-            f_next[i] = f[i] + fdiff[i]
+        @turbo for j in 1:J
+            for k in 1:K
+                f_next[k, j] = f[k, j] + fdiff[k, j]
+            end
         end
         # f_next .= f .+ fdiff
         project_f!(f_next)

@@ -1,5 +1,5 @@
 module AdmiXpress
-using Random, LoopVectorization, Tullio
+using Random, LoopVectorization
 import LinearAlgebra: svd, norm, diag, mul!
 import SnpArrays: SnpLinAlg
 export AdmixData
