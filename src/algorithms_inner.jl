@@ -2,24 +2,30 @@
     loglikelihood(g, qf)
 Compute loglikelihood.
 """
-function loglikelihood(g::AbstractArray{T}, q, f, qf_small, K) where T
+function loglikelihood(g::AbstractArray{T}, q, f, qf_small, K, skipmissing) where T
     I = size(q, 2)
     J = size(f, 2)
     #K = 0 # dummy
     # r = tiler_scalar_1d(loglikelihood_loop, typeof(qf_small), zero(T), (g, q, f, qf_small), 1:I, 1:J, K)
-    r = loglikelihood_loop(g, q, f, nothing, 1:I, 1:J, K)
+    if !skipmissing
+        r = loglikelihood_loop(g, q, f, nothing, 1:I, 1:J, K)
+    else
+        r = loglikelihood_loop_skipmissing(g, q, f, nothing, 1:I, 1:J, K)
+    end
     # r = tiler_scalar(loglikelihood_loop, typeof(qf_small), zero(T), (g, q, f, qf_small), 1:I, 1:J, K)
     r
 end
 
-function loglikelihood(g::SnpLinAlg{T}, q, f, qf_small, K) where T
+function loglikelihood(g::SnpLinAlg{T}, q, f, qf_small, K, skipmissing) where T
     I = size(q, 2)
     J = size(f, 2)
     #K = 0 # dummy
-    r = tiler_scalar(loglikelihood_loop, typeof(qf_small), zero(T), (g, q, f, qf_small), 1:I, 1:J, K)
+    r = tiler_scalar(skipmissing ? loglikelihood_loop_skipmissing : loglikelihood_loop, 
+        typeof(qf_small), zero(T), (g, q, f, qf_small), 1:I, 1:J, K)
     # r = loglikelihood_loop(g, q, f, nothing, 1:I, 1:J, K)
     r
 end
+
 # function loglikelihood(g::AbstractArray{T}, q, f, qf_small, K, tmp) where T
 #     I = size(q, 2)
 #     J = size(f, 2)
@@ -29,13 +35,13 @@ end
 #     r
 # end
 
-function loglikelihood(g::AbstractArray{T}, qf) where T
-    I = size(qf, 1)
-    J = size(qf, 2)
-    K = 0 # dummy
-    r = loglikelihood_loop(g, qf, 1:I, 1:J, K)
-    r
-end
+# function loglikelihood(g::AbstractArray{T}, qf) where T
+#     I = size(qf, 1)
+#     J = size(qf, 2)
+#     K = 0 # dummy
+#     r = loglikelihood_loop(g, qf, 1:I, 1:J, K)
+#     r
+# end
 
 """
 FRAPPE EM algorithm
@@ -51,7 +57,8 @@ function em_q!(d::AdmixData{T}, g::AbstractArray{T}, mode=:base) where T
         q_next, q, f = d.q_next2, d.q_next, d.f_next
     end
     fill!(q_next, zero(T))
-    @time tiler!(em_q_loop!, typeof(q_next), (q_next, g, q, f, qf_small), 1:I, 1:J, K)
+    @time tiler!(d.skipmissing ? em_q_loop_skipmissing! : em_q_loop!, 
+        typeof(q_next), (q_next, g, q, f, qf_small), 1:I, 1:J, K)
     # @time em_q_loop!(q_next, g, q, f, qf, 1:I, 1:J, K)
     q_next ./= 2J
     # @tullio q_new[k, i] = (g[i, j] * q[k, i] * f[k, j] / qf[i, j] + 
@@ -72,7 +79,8 @@ function em_f!(d::AdmixData{T}, g::AbstractArray{T}, mode=:base) where T
     fill!(f_tmp, zero(T))
     fill!(f_next, zero(T))
 
-    @time tiler!(em_f_loop!, T, (f_next, g, q, f, f_tmp, qf_small), 1:I, 1:J, K)
+    @time tiler!(d.skipmissing ? em_f_loop_skipmissing! : em_f_loop!, 
+        typeof(f_next), (f_next, g, q, f, f_tmp, qf_small), 1:I, 1:J, K)
     # @time em_f_loop!(f_next, g, q, f, f_tmp, qf_small, 1:I, 1:J, K)
     @turbo for j in 1:J
         for k in 1:K
@@ -104,7 +112,8 @@ function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false) where T
     fill!(XtX, zero(T))
     fill!(Xtz, zero(T))
     # @time tiler!(update_q_loop!, T, (XtX, Xtz, g, f, qf), 1:I, 1:J, K)
-    @time tiler!(update_q_loop!, typeof(XtX), (XtX, Xtz, g, q, f, qf_small), 1:I, 1:J, K)
+    @time tiler!(d.skipmissing ? update_q_loop_skipmissing! : update_q_loop!, 
+        typeof(XtX), (XtX, Xtz, g, q, f, qf_small), 1:I, 1:J, K)
     #update_q_loop!(XtX, Xtz, g, f, qf, 1:I, 1:J, K)
 
     begin
@@ -149,7 +158,7 @@ function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false) where T
 
     begin
         # qf!(qf, q_next, f)
-        @time d.ll_new = loglikelihood(g, q_next, f, qf_small, K)
+        @time d.ll_new = loglikelihood(g, q_next, f, qf_small, K, d.skipmissing)
         println("update_q: ", d.ll_new)
         tau = 1.0
         for cnt in 1:length(tau_schedule)
@@ -161,7 +170,7 @@ function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false) where T
             q_next .= q .+ tau .* qdiff
             project_q!(q_next, d.idx)
             # qf!(qf, q_next, f)
-            d.ll_new = loglikelihood(g, q_next, f, qf_small, K)
+            d.ll_new = loglikelihood(g, q_next, f, qf_small, K, d.skipmissing)
         end
         println(maximum(abs.(qdiff)))
         println("Update failed. Falling back to EM update.")
@@ -169,7 +178,7 @@ function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false) where T
         em_q!(d, g, update2 ? :fallback2 : :fallback)
         project_q!(q_next, d.idx)
         # qf!(qf, q_next, f)
-        d.ll_new = loglikelihood(g, q_next, f, qf_small, K)
+        d.ll_new = loglikelihood(g, q_next, f, qf_small, K, d.skipmissing)
         return
     end
 end
@@ -192,7 +201,8 @@ function update_f!(d::AdmixData{T}, g::AbstractArray{T}, update2=false) where T
     fill!(XtX, zero(T))
     fill!(Xtz, zero(T))
     # @time tiler_1d!(update_f_loop!, typeof(XtX), (XtX, Xtz, g, q, f, qf_thin), 1:I, 1:J, K)
-    @time tiler!(update_f_loop!, typeof(XtX), (XtX, Xtz, g, q, f, qf_small), 1:I, 1:J, K)
+    @time tiler!(d.skipmissing ? update_f_loop_skipmissing! : update_f_loop!, 
+        typeof(XtX), (XtX, Xtz, g, q, f, qf_small), 1:I, 1:J, K)
     # @time update_f_loop!(XtX, Xtz, g, q, qf, 1:I, 1:J, K)
 
     begin       
@@ -234,7 +244,7 @@ function update_f!(d::AdmixData{T}, g::AbstractArray{T}, update2=false) where T
     begin
         tau = 1.0
         # qf!(qf, q, f_next)
-        @time d.ll_new = loglikelihood(g, q, f_next, qf_small, K)
+        @time d.ll_new = loglikelihood(g, q, f_next, qf_small, K, d.skipmissing)
         println("update_f: ", d.ll_new)
         for cnt in 1:length(tau_schedule)
             if d.ll_prev < d.ll_new
@@ -245,7 +255,7 @@ function update_f!(d::AdmixData{T}, g::AbstractArray{T}, update2=false) where T
             f_next .= f .+ tau .* fdiff
             project_f!(f_next)
             # qf!(qf, q, f_next)
-            d.ll_new = loglikelihood(g, q, f_next, qf_small, K)
+            d.ll_new = loglikelihood(g, q, f_next, qf_small, K, d.skipmissing)
         end
         println(maximum(abs.(fdiff)))
         println("Update failed. Falling back to EM update.")
@@ -253,7 +263,7 @@ function update_f!(d::AdmixData{T}, g::AbstractArray{T}, update2=false) where T
         em_f!(d, g, update2 ? :fallback2 : :fallback)
         project_f!(f_next)
         # qf!(qf, q, f_next)
-        d.ll_new = loglikelihood(g, q, f_next, qf_small, K)
+        d.ll_new = loglikelihood(g, q, f_next, qf_small, K, d.skipmissing)
         return 
     end
 end

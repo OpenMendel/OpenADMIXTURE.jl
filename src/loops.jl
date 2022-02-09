@@ -209,13 +209,23 @@ end
     @turbo for j in jrange
         for i in irange
             gij = g[i, j]
-            isnan = gij != gij
+            nonmissing = one(T) * (gij == gij)
             qf_local = zero(T)
             for k in 1:K
                 qf_local += q[k, i] * f[k, j]
             end
-            r += isnan ? zero(T) : gij * log(qf_local) + 
-                (twoT - gij) * log(oneT - qf_local)
+            r += nonmissing *  gij * log(qf_local) 
+        end
+    end
+    @turbo for j in jrange
+        for i in irange
+            gij = g[i, j]
+            nonmissing = one(T) * (gij == gij)
+            qf_local = zero(T)
+            for k in 1:K
+                qf_local += q[k, i] * f[k, j]
+            end
+            r += nonmissing * (twoT - gij) * log(oneT - qf_local)
         end
     end
     r
@@ -285,10 +295,10 @@ end
         for i in irange
             for k in 1:K
                 gij = g[i, j]
-                isnan = gij != gij
+                nonmissing = one(T) * (gij == gij)
                 tmp = (gij * q[k, i] * f[k, j] / qf_small[i-firsti+1, j-firstj+1] + 
                     (2 - gij) * q[k, i] * (1 - f[k, j]) / (1 - qf_small[i-firsti+1, j-firstj+1]))
-                q_next[k, i] += isnan ? zero(T) : tmp
+                q_next[k, i] += nonmissing * tmp
             end
         end
     end
@@ -354,10 +364,10 @@ end
     @turbo for j in jrange
         for i in irange
             gij = g[i, j]
-            isnan = gij != gij
+            nonmissing = one(T) * (gij == gij)
             for k in 1:K
-                f_tmp[k, j] += isnan ? zero(T) : gij * q[k, i] * f[k, j] / qf_small[i-firsti+1, j-firstj+1]
-                f_next[k, j] += isnan ? zero(T) : (2 - gij) * q[k, i] * (one(T) - f[k, j]) / (one(T) - qf_small[i-firsti+1, j-firstj+1])
+                f_tmp[k, j] += nonmissing * (gij * q[k, i] * f[k, j] / qf_small[i-firsti+1, j-firstj+1])
+                f_next[k, j] += nonmissing * ((2 - gij) * q[k, i] * (one(T) - f[k, j]) / (one(T) - qf_small[i-firsti+1, j-firstj+1]))
             end
         end
     end
@@ -430,13 +440,13 @@ end
     @turbo for j in jrange
         for i in irange
             gij = g[i, j]
-            isnan = gij != gij
+            nonmissing = one(T) * (gij == gij)
             for k in 1:K
-                Xtz[k, i] += isnan ? zero(T) : gij * f[k, j] / qf_small[i-firsti+1, j-firstj+1] + 
-                    (twoT - gij) * (oneT - f[k, j]) / (oneT - qf_small[i-firsti+1, j-firstj+1])
+                Xtz[k, i] += nonmissing * (gij * f[k, j] / qf_small[i-firsti+1, j-firstj+1] + 
+                    (twoT - gij) * (oneT - f[k, j]) / (oneT - qf_small[i-firsti+1, j-firstj+1]))
                 for k2 in 1:K
-                    XtX[k2, k, i] += isnan ? zero(T) : gij / (qf_small[i-firsti+1, j-firstj+1]) ^ 2 * f[k, j] * f[k2, j] + 
-                        (twoT - gij) / (oneT - qf_small[i-firsti+1, j-firstj+1]) ^ 2 * (oneT - f[k, j]) * (oneT - f[k2, j])
+                    XtX[k2, k, i] += nonmissing * (gij / (qf_small[i-firsti+1, j-firstj+1]) ^ 2 * f[k, j] * f[k2, j] + 
+                        (twoT - gij) / (oneT - qf_small[i-firsti+1, j-firstj+1]) ^ 2 * (oneT - f[k, j]) * (oneT - f[k2, j]))
                 end
             end
         end
@@ -471,13 +481,13 @@ end
     @turbo for j in jrange
         for i in irange
             gij = g[i, j]
-            isnan = gij != gij
+            nonmissing = one(T) * (gij == gij)
             for k in 1:K
-                Xtz[k, j] += isnan ? zero(T) : gij * q[k, i] / qf_small[i-firsti+1, j-firstj+1] - 
-                        (twoT - gij) * q[k, i] / (oneT - qf_small[i-firsti+1, j-firstj+1])
+                Xtz[k, j] += nonmissing * (gij * q[k, i] / qf_small[i-firsti+1, j-firstj+1] - 
+                        (twoT - gij) * q[k, i] / (oneT - qf_small[i-firsti+1, j-firstj+1]))
                 for k2 in 1:K
-                    XtX[k2, k, j] += isnan ? zero(T) : gij / (qf_small[i-firsti+1, j-firstj+1]) ^ 2 * q[k, i] * q[k2, i] + 
-                        (twoT - gij) / (oneT - qf_small[i-firsti+1, j-firstj+1]) ^ 2 * q[k, i] * q[k2, i]
+                    XtX[k2, k, j] += nonmissing * (gij / (qf_small[i-firsti+1, j-firstj+1]) ^ 2 * q[k, i] * q[k2, i] + 
+                        (twoT - gij) / (oneT - qf_small[i-firsti+1, j-firstj+1]) ^ 2 * q[k, i] * q[k2, i])
                 end
             end
         end

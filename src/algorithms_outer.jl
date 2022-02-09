@@ -14,7 +14,7 @@ end
 
 function admixture_qn!(d::AdmixData{T}, g::AbstractArray{T}, iter::Int=30, rtol=1e-7) where T
     # qf!(d.qf, d.q, d.f)
-    ll_prev = loglikelihood(g, d.q, d.f, d.qf_small, d.K)
+    ll_prev = loglikelihood(g, d.q, d.f, d.qf_small, d.K, d.skipmissing)
     d.ll_new = ll_prev
     println(ll_prev)
     for i in 1:iter
@@ -37,7 +37,7 @@ function admixture_qn!(d::AdmixData{T}, g::AbstractArray{T}, iter::Int=30, rtol=
             project_f!(d.f_tmp)
             project_q!(d.q_tmp, d.idx)
             # qf!(d.qf, d.q_tmp, d.f_tmp)
-            ll_qn = loglikelihood(g, d.q_tmp, d.f_tmp, d.qf_small, d.K)
+            ll_qn = loglikelihood(g, d.q_tmp, d.f_tmp, d.qf_small, d.K, d.skipmissing)
             if ll_prev < ll_qn
                 d.x .= d.x_tmp
                 d.ll_new = ll_qn

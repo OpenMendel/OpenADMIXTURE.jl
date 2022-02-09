@@ -10,6 +10,7 @@ mutable struct AdmixData{T}
     J           ::Int
     K           ::Int
     Q           ::Int
+    skipmissing ::Bool
 
     x           ::Matrix{T} # K x (I + J)
     x_next      ::Matrix{T}
@@ -71,7 +72,7 @@ mutable struct AdmixData{T}
     snptmp      ::Array{T}
 end
 
-function AdmixData{T}(I, J, K, Q; seed=nothing) where T
+function AdmixData{T}(I, J, K, Q; skipmissing=true, seed=nothing) where T
     if seed !== nothing
         Random.seed!(seed)
     end
@@ -140,7 +141,7 @@ function AdmixData{T}(I, J, K, Q; seed=nothing) where T
     # U_f = view(reshape(U, K, (I+J), Q), :, (I+1):(I+J), :)
     snptmp = rand(T, 4)
 
-    AdmixData{T}(I, J, K, Q, x, x_next, x_next2, x_tmp, 
+    AdmixData{T}(I, J, K, Q, skipmissing, x, x_next, x_next2, x_tmp, 
         x_flat, x_next_flat, x_next2_flat, x_tmp_flat,
         q, q_next, q_next2, q_tmp, f, f_next, f_next2, f_tmp, 
         XtX_q, Xtz_q, XtX_f, Xtz_f, 
