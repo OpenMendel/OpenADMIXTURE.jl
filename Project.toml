@@ -10,6 +10,7 @@ Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 SnpArrays = "4e780e97-f5bf-4111-9dc4-b70aaf691b06"
 
 [compat]
+StaticArrays = "1"
 julia = "1.6"
 
 [extras]
