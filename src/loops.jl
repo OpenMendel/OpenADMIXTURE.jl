@@ -1,6 +1,8 @@
 const TILE = Ref(512) # this is now a length, in bytes!
-const nonmissing_map = [1.0, 0.0, 1.0, 1.0]
-const g_map = [0.0, 0.0, 1.0, 2.0]
+const nonmissing_map_Float64 = [1.0, 0.0, 1.0, 1.0]
+const g_map_Float64 = [0.0, 0.0, 1.0, 2.0]
+const nonmissing_map_Float32 = [1.0f0, 0.0f0, 1.0f0, 1.0f0]
+const g_map_Float32 = [0.0f0, 0.0f0, 1.0f0, 2.0f0]
 
 function tile_maxiter(::Type{<:AbstractArray{T}}) where {T}
     isbitstype(T) || return TILE[] ÷ 8
@@ -139,6 +141,7 @@ end
     twoT = 2one(T)
     rslt = zero(T)
     gmat = g.s.data
+    g_map = T == Float64 ? g_map_Float64 : g_map_Float32
     @turbo for j in jrange
         for i in irange
             blk = gmat[(i - 1) >> 2 + 1, j]
@@ -158,6 +161,8 @@ end
     twoT = 2one(T)
     rslt = zero(T)
     gmat = g.s.data
+    g_map = T == Float64 ? g_map_Float64 : g_map_Float32
+    nonmissing_map = T == Float64 ? nonmissing_map_Float64 : nonmissing_map_Float32
     @turbo for j in jrange
         for i in irange
             blk = gmat[(i - 1) >> 2 + 1, j]
@@ -166,7 +171,7 @@ end
             gij_pre = blk_shifted & 0x03
             gij = g_map[gij_pre + 0x01]
             nonmissing = nonmissing_map[gij_pre + 0x01]
-            rslt += nonmissing * (gij * log(qf[i, j]) + (twoT - gij) * log(oneT - qf[i, j]))
+            rslt += nonmissing ? (gij * log(qf[i, j]) + (twoT - gij) * log(oneT - qf[i, j])) : zero(T)
         end
     end
     # @tullio r = g[i, j] * log(qf[i, j]) + (2 - g[i, j]) * log(1 - qf[i, j])
@@ -209,23 +214,23 @@ end
     @turbo for j in jrange
         for i in irange
             gij = g[i, j]
-            nonmissing = one(T) * (gij == gij)
+            nonmissing = (gij == gij)
             qf_local = zero(T)
             for k in 1:K
                 qf_local += q[k, i] * f[k, j]
             end
-            r += nonmissing *  gij * log(qf_local) 
+            r += nonmissing ? gij * log(qf_local) : zero(T)
         end
     end
     @turbo for j in jrange
         for i in irange
             gij = g[i, j]
-            nonmissing = one(T) * (gij == gij)
+            nonmissing = (gij == gij)
             qf_local = zero(T)
             for k in 1:K
                 qf_local += q[k, i] * f[k, j]
             end
-            r += nonmissing * (twoT - gij) * log(oneT - qf_local)
+            r += nonmissing ? (twoT - gij) * log(oneT - qf_local) : zero(T)
         end
     end
     r
@@ -238,6 +243,7 @@ end
     qf_block!(qf_small, q, f, irange, jrange, K)
     r = zero(T)
     gmat = g.s.data
+    g_map = T == Float64 ? g_map_Float64 : g_map_Float32
     @turbo for j in jrange
         for i in irange
             blk = gmat[(i - 1) >> 2 + 1, j]
@@ -260,6 +266,8 @@ end
     qf_block!(qf_small, q, f, irange, jrange, K)
     r = zero(T)
     gmat = g.s.data
+    g_map = T == Float64 ? g_map_Float64 : g_map_Float32
+    nonmissing_map = T == Float64 ? nonmissing_map_Float64 : nonmissing_map_Float32
     @turbo for j in jrange
         for i in irange
             blk = gmat[(i - 1) >> 2 + 1, j]
@@ -295,10 +303,10 @@ end
         for i in irange
             for k in 1:K
                 gij = g[i, j]
-                nonmissing = one(T) * (gij == gij)
+                nonmissing = (gij == gij)
                 tmp = (gij * q[k, i] * f[k, j] / qf_small[i-firsti+1, j-firstj+1] + 
                     (2 - gij) * q[k, i] * (1 - f[k, j]) / (1 - qf_small[i-firsti+1, j-firstj+1]))
-                q_next[k, i] += nonmissing * tmp
+                q_next[k, i] += nonmissing ? tmp : zero(T)
             end
         end
     end
@@ -308,6 +316,7 @@ end
     firsti, firstj = first(irange), first(jrange)
     qf_block!(qf_small, q, f, irange, jrange, K)
     gmat = g.s.data
+    g_map = T == Float64 ? g_map_Float64 : g_map_Float32
     @turbo for j in jrange
         for i in irange
             for k in 1:K
@@ -327,6 +336,8 @@ end
     firsti, firstj = first(irange), first(jrange)
     qf_block!(qf_small, q, f, irange, jrange, K)
     gmat = g.s.data
+    g_map = T == Float64 ? g_map_Float64 : g_map_Float32
+    nonmissing_map = T == Float64 ? nonmissing_map_Float64 : nonmissing_map_Float32
     @turbo for j in jrange
         for i in irange
             for k in 1:K
@@ -364,10 +375,10 @@ end
     @turbo for j in jrange
         for i in irange
             gij = g[i, j]
-            nonmissing = one(T) * (gij == gij)
+            nonmissing = (gij == gij)
             for k in 1:K
-                f_tmp[k, j] += nonmissing * (gij * q[k, i] * f[k, j] / qf_small[i-firsti+1, j-firstj+1])
-                f_next[k, j] += nonmissing * ((2 - gij) * q[k, i] * (one(T) - f[k, j]) / (one(T) - qf_small[i-firsti+1, j-firstj+1]))
+                f_tmp[k, j] += nonmissing ? (gij * q[k, i] * f[k, j] / qf_small[i-firsti+1, j-firstj+1]) : zero(T)
+                f_next[k, j] += nonmissing ? ((2 - gij) * q[k, i] * (one(T) - f[k, j]) / (one(T) - qf_small[i-firsti+1, j-firstj+1])) : zero(T)
             end
         end
     end
@@ -377,6 +388,7 @@ end
     firsti, firstj = first(irange), first(jrange)
     qf_block!(qf_small, q, f, irange, jrange, K)
     gmat = g.s.data
+    g_map = T == Float64 ? g_map_Float64 : g_map_Float32
     @turbo for j in jrange
         for i in irange
             blk = gmat[(i - 1) >> 2 + 1, j]
@@ -396,6 +408,8 @@ end
     firsti, firstj = first(irange), first(jrange)
     qf_block!(qf_small, q, f, irange, jrange, K)
     gmat = g.s.data
+    g_map = T == Float64 ? g_map_Float64 : g_map_Float32
+    nonmissing_map = T == Float64 ? nonmissing_map_Float64 : nonmissing_map_Float32
     @turbo for j in jrange
         for i in irange
             blk = gmat[(i - 1) >> 2 + 1, j]
@@ -440,13 +454,13 @@ end
     @turbo for j in jrange
         for i in irange
             gij = g[i, j]
-            nonmissing = one(T) * (gij == gij)
+            nonmissing = (gij == gij)
             for k in 1:K
-                Xtz[k, i] += nonmissing * (gij * f[k, j] / qf_small[i-firsti+1, j-firstj+1] + 
-                    (twoT - gij) * (oneT - f[k, j]) / (oneT - qf_small[i-firsti+1, j-firstj+1]))
+                Xtz[k, i] += nonmissing ? (gij * f[k, j] / qf_small[i-firsti+1, j-firstj+1] + 
+                    (twoT - gij) * (oneT - f[k, j]) / (oneT - qf_small[i-firsti+1, j-firstj+1])) : zero(T)
                 for k2 in 1:K
-                    XtX[k2, k, i] += nonmissing * (gij / (qf_small[i-firsti+1, j-firstj+1]) ^ 2 * f[k, j] * f[k2, j] + 
-                        (twoT - gij) / (oneT - qf_small[i-firsti+1, j-firstj+1]) ^ 2 * (oneT - f[k, j]) * (oneT - f[k2, j]))
+                    XtX[k2, k, i] += nonmissing ? (gij / (qf_small[i-firsti+1, j-firstj+1]) ^ 2 * f[k, j] * f[k2, j] + 
+                        (twoT - gij) / (oneT - qf_small[i-firsti+1, j-firstj+1]) ^ 2 * (oneT - f[k, j]) * (oneT - f[k2, j])) : zero(T)
                 end
             end
         end
@@ -481,13 +495,13 @@ end
     @turbo for j in jrange
         for i in irange
             gij = g[i, j]
-            nonmissing = one(T) * (gij == gij)
+            nonmissing =  (gij == gij)
             for k in 1:K
-                Xtz[k, j] += nonmissing * (gij * q[k, i] / qf_small[i-firsti+1, j-firstj+1] - 
-                        (twoT - gij) * q[k, i] / (oneT - qf_small[i-firsti+1, j-firstj+1]))
+                Xtz[k, j] += nonmissing ? (gij * q[k, i] / qf_small[i-firsti+1, j-firstj+1] - 
+                        (twoT - gij) * q[k, i] / (oneT - qf_small[i-firsti+1, j-firstj+1])) : zero(T)
                 for k2 in 1:K
-                    XtX[k2, k, j] += nonmissing * (gij / (qf_small[i-firsti+1, j-firstj+1]) ^ 2 * q[k, i] * q[k2, i] + 
-                        (twoT - gij) / (oneT - qf_small[i-firsti+1, j-firstj+1]) ^ 2 * q[k, i] * q[k2, i])
+                    XtX[k2, k, j] += nonmissing ? (gij / (qf_small[i-firsti+1, j-firstj+1]) ^ 2 * q[k, i] * q[k2, i] + 
+                        (twoT - gij) / (oneT - qf_small[i-firsti+1, j-firstj+1]) ^ 2 * q[k, i] * q[k2, i]) : zero(T)
                 end
             end
         end
@@ -500,6 +514,7 @@ end
     gmat = g.s.data
     firsti, firstj = first(irange), first(jrange)
     qf_block!(qf_small, q, f, irange, jrange, K)
+    g_map = T == Float64 ? g_map_Float64 : g_map_Float32
     @turbo for j in jrange
         for i in irange
             blk = gmat[(i - 1) >> 2 + 1, j]
@@ -525,6 +540,8 @@ end
     gmat = g.s.data
     firsti, firstj = first(irange), first(jrange)
     qf_block!(qf_small, q, f, irange, jrange, K)
+    g_map = T == Float64 ? g_map_Float64 : g_map_Float32
+    nonmissing_map = T == Float64 ? nonmissing_map_Float64 : nonmissing_map_Float32
     @turbo for j in jrange
         for i in irange
             blk = gmat[(i - 1) >> 2 + 1, j]
@@ -551,6 +568,7 @@ function update_f_loop!(XtX, Xtz, g::SnpLinAlg{T}, q, f, qf_small, irange, jrang
     gmat = g.s.data
     firsti, firstj = first(irange), first(jrange)
     qf_block!(qf_small, q, f, irange, jrange, K)
+    g_map = T == Float64 ? g_map_Float64 : g_map_Float32
     @turbo for j in jrange
         for i in irange
             blk = gmat[(i - 1) >> 2 + 1, j]
@@ -576,6 +594,8 @@ function update_f_loop_skipmissing!(XtX, Xtz, g::SnpLinAlg{T}, q, f, qf_small, i
     gmat = g.s.data
     firsti, firstj = first(irange), first(jrange)
     qf_block!(qf_small, q, f, irange, jrange, K)
+    g_map = T == Float64 ? g_map_Float64 : g_map_Float32
+    nonmissing_map = T == Float64 ? nonmissing_map_Float64 : nonmissing_map_Float32
     @turbo for j in jrange
         for i in irange
             blk = gmat[(i - 1) >> 2 + 1, j]

@@ -116,7 +116,7 @@ function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false) where T
         typeof(XtX), (XtX, Xtz, g, q, f, qf_small), 1:I, 1:J, K)
     #update_q_loop!(XtX, Xtz, g, f, qf, 1:I, 1:J, K)
 
-    begin
+    @time begin
         # for QP formulation
         Xtz .*= -1 
         # matrix_a = ones(T, 1, K)
@@ -205,7 +205,7 @@ function update_f!(d::AdmixData{T}, g::AbstractArray{T}, update2=false) where T
         typeof(XtX), (XtX, Xtz, g, q, f, qf_small), 1:I, 1:J, K)
     # @time update_f_loop!(XtX, Xtz, g, q, qf, 1:I, 1:J, K)
 
-    begin       
+    @time begin       
         Xtz .*= -1 
         # matrix_a = ones(T, 0, 0)
         # b = ones(T, 0)
