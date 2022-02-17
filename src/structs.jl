@@ -1,5 +1,6 @@
-const SAT{T} = SubArray{T, 2, Matrix{T}, 
-    Tuple{Base.Slice{Base.OneTo{Int}}, UnitRange{Int}}, true}
+const SAT{T} = Matrix{T}
+# const SAT{T} = SubArray{T, 2, Matrix{T}, 
+#     Tuple{Base.Slice{Base.OneTo{Int}}, UnitRange{Int}}, true}
 const TwoDSlice{T} = Vector{SubArray{T, 2, Array{T, 3}, 
     Tuple{Base.Slice{Base.OneTo{Int64}}, Base.Slice{Base.OneTo{Int64}}, Int64}, true}}
 const OneDSlice{T} = Vector{SubArray{T, 1, Matrix{T}, 
@@ -22,15 +23,15 @@ mutable struct AdmixData{T}
     x_next2_flat::Vector{T}
     x_tmp_flat  ::Vector{T}
 
-    q           ::SAT # K x I
-    q_next      ::SAT
-    q_next2     ::SAT
-    q_tmp       ::SAT
+    q           ::SAT{T} # K x I
+    q_next      ::SAT{T}
+    q_next2     ::SAT{T}
+    q_tmp       ::SAT{T}
 
-    f           ::SAT # K x J
-    f_next      ::SAT
-    f_next2     ::SAT
-    f_tmp       ::SAT
+    f           ::SAT{T} # K x J
+    f_next      ::SAT{T}
+    f_next2     ::SAT{T}
+    f_tmp       ::SAT{T}
 
     XtX_q       ::Array{T, 3} # K x K x I
     Xtz_q       ::Matrix{T}   # K x I
@@ -87,15 +88,23 @@ function AdmixData{T}(I, J, K, Q; skipmissing=true, seed=nothing) where T
     x_tmp_flat = reshape(x_tmp, :)
 
     q       = view(x      , :, 1:I)#rand(T, K, J) 
+    q       = unsafe_wrap(Array, pointer(q), size(q))
     q_next  = view(x_next , :, 1:I)
+    q_next  = unsafe_wrap(Array, pointer(q_next), size(q_next))
     q_next2 = view(x_next2, :, 1:I)
+    q_next2  = unsafe_wrap(Array, pointer(q_next2), size(q_next2))
     q_tmp   = view(x_tmp, :, 1:I)
+    q_tmp  = unsafe_wrap(Array, pointer(q_tmp), size(q_tmp))
     q ./= sum(q, dims=1)
 
     f       = view(x      , :, (I+1):(I+J))#rand(T, K, J) 
+    f       = unsafe_wrap(Array, pointer(f), size(f))
     f_next  = view(x_next , :, (I+1):(I+J))
+    f_next  = unsafe_wrap(Array, pointer(f_next), size(f_next))
     f_next2 = view(x_next2, :, (I+1):(I+J))
+    f_next2 = unsafe_wrap(Array, pointer(f_next2), size(f_next2))
     f_tmp   = view(x_tmp, :, (I+1):(I+J))
+    f_tmp   = unsafe_wrap(Array, pointer(f_tmp), size(f_tmp))
 
     XtX_q = rand(T, K, K, I)
     Xtz_q = rand(T, K, I)
@@ -114,6 +123,15 @@ function AdmixData{T}(I, J, K, Q; skipmissing=true, seed=nothing) where T
     Xtz_qv      = [view(Xtz_q, :, i) for i in 1:I]
     XtX_fv      = [view(XtX_f, :, :, j) for j in 1:J]
     Xtz_fv      = [view(Xtz_f, :, j) for j in 1:J]
+
+    # q, 
+    # q_arr = unsafe_wrap(Array, pointer(q), size(q))
+    # q_next_arr = unsafe_wrap(Array, pointer(q_next), size(q_next))
+    # q_tmp_arr = unsafe_wrap(Array, pointer(q_tmp), size(q_tmp))
+
+    # f_arr = unsafe_wrap(Array, pointer(q), size(q))
+    # f_next_arr = unsafe_wrap(Array, pointer(q_next), size(q_next))
+    # f_tmp_arr = unsafe_wrap(Array, pointer(q_tmp), size(q_tmp))
 
 
     # qf = rand(T, I, J);
