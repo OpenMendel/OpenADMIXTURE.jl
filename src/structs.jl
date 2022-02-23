@@ -67,8 +67,8 @@ mutable struct AdmixData{T}
     tableau_k2  ::Matrix{T}   # (K + 2) x (K + 2)
     swept       ::BitVector
 
-    ll_prev     ::T
-    ll_new      ::T
+    ll_prev     ::Float64
+    ll_new      ::Float64
     idx         ::Array{Int}
     snptmp      ::Array{T}
 end
@@ -167,5 +167,5 @@ function AdmixData{T}(I, J, K, Q; skipmissing=true, seed=nothing) where T
         qf_small, U, V, vt, 
         tmp_k, tmp_k1, tmp_k1_, tmp_k2, tmp_k2_, 
         tableau_k1, tableau_k2, swept,
-        zero(T), zero(T), Array{Int}(undef, K), snptmp)
+        NaN, NaN, Array{Int}(undef, K), snptmp)
 end

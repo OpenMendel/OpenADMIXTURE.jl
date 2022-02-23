@@ -10,7 +10,7 @@ using .CUDA
     ystride = blockDim().y * gridDim().y   
     oneT = one(T)
     twoT = 2one(T)
-    acc = zero(eltype(out))
+    acc = zero(Float64)
     @inbounds for j = (firstj + yindex - 1):ystride:lastj
         for i = (firsti + xindex - 1):xstride:lasti
             qf_local = zero(eltype(out))

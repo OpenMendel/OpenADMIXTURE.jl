@@ -21,7 +21,7 @@ function loglikelihood(g::SnpLinAlg{T}, q, f, qf_small, K, skipmissing) where T
     J = size(f, 2)
     #K = 0 # dummy
     r = tiler_scalar(skipmissing ? loglikelihood_loop_skipmissing : loglikelihood_loop, 
-        typeof(qf_small), zero(T), (g, q, f, qf_small), 1:I, 1:J, K)
+        typeof(qf_small), zero(Float64), (g, q, f, qf_small), 1:I, 1:J, K)
     # r = loglikelihood_loop(g, q, f, nothing, 1:I, 1:J, K)
     r
 end
@@ -94,7 +94,7 @@ end
 
 const tau_schedule = collect(0.7^i for i in 1:10)
 
-function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false) where T
+function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=nothing) where T
 # function update_q!(q_next, g::AbstractArray{T}, q, f, qdiff, XtX, Xtz, qf) where T
     I, J, K = d.I, d.J, d.K
     qdiff, XtX, Xtz, qf_small = d.q_tmp, d.XtX_q, d.Xtz_q, d.qf_small
@@ -109,12 +109,19 @@ function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false) where T
     # qf!(qf, q, f)
     d.ll_prev = d.ll_new # loglikelihood(g, qf)
     println(d.ll_prev)
-    fill!(XtX, zero(T))
-    fill!(Xtz, zero(T))
-    # @time tiler!(update_q_loop!, T, (XtX, Xtz, g, f, qf), 1:I, 1:J, K)
-    @time tiler!(d.skipmissing ? update_q_loop_skipmissing! : update_q_loop!, 
-        typeof(XtX), (XtX, Xtz, g, q, f, qf_small), 1:I, 1:J, K)
-    #update_q_loop!(XtX, Xtz, g, f, qf, 1:I, 1:J, K)
+    @time if d_cu === nothing
+        fill!(XtX, zero(T))
+        fill!(Xtz, zero(T))
+        # @time tiler!(update_q_loop!, T, (XtX, Xtz, g, f, qf), 1:I, 1:J, K)
+        tiler!(d.skipmissing ? update_q_loop_skipmissing! : update_q_loop!, 
+            typeof(XtX), (XtX, Xtz, g, q, f, qf_small), 1:I, 1:J, K)
+        #update_q_loop!(XtX, Xtz, g, f, qf, 1:I, 1:J, K)
+    else
+        @assert d.skipmissing "`skipmissing`` must be true for GPU computation"
+        copyto_sync!([d_cu.q, d_cu.f], [q, f])
+        update_q_cuda!(d_cu, g)
+        copyto_sync!([XtX, Xtz], [d_cu.XtX_q, d_cu.Xtz_q])
+    end
 
     @time begin
         # for QP formulation
@@ -156,34 +163,36 @@ function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false) where T
         project_q!(q_next, d.idx)
     end
 
-    begin
-        # qf!(qf, q_next, f)
-        @time d.ll_new = loglikelihood(g, q_next, f, qf_small, K, d.skipmissing)
-        println("update_q: ", d.ll_new)
-        tau = 1.0
-        for cnt in 1:length(tau_schedule)
-            if d.ll_prev < d.ll_new
-                return
-            end
-            println(cnt)
-            tau = tau_schedule[cnt]
-            q_next .= q .+ tau .* qdiff
-            project_q!(q_next, d.idx)
-            # qf!(qf, q_next, f)
-            d.ll_new = loglikelihood(g, q_next, f, qf_small, K, d.skipmissing)
-        end
-        println(maximum(abs.(qdiff)))
-        println("Update failed. Falling back to EM update.")
-        # qf!(qf, q, f)
-        em_q!(d, g, update2 ? :fallback2 : :fallback)
-        project_q!(q_next, d.idx)
-        # qf!(qf, q_next, f)
-        d.ll_new = loglikelihood(g, q_next, f, qf_small, K, d.skipmissing)
-        return
-    end
+    # Line serach for step size
+
+    # begin
+    #     # qf!(qf, q_next, f)
+    #     @time d.ll_new = loglikelihood(g, q_next, f, qf_small, K, d.skipmissing)
+    #     println("update_q: ", d.ll_new)
+    #     tau = 1.0
+    #     for cnt in 1:length(tau_schedule)
+    #         if d.ll_prev < d.ll_new
+    #             return
+    #         end
+    #         println(cnt)
+    #         tau = tau_schedule[cnt]
+    #         q_next .= q .+ tau .* qdiff
+    #         project_q!(q_next, d.idx)
+    #         # qf!(qf, q_next, f)
+    #         d.ll_new = loglikelihood(g, q_next, f, qf_small, K, d.skipmissing)
+    #     end
+    #     # println(maximum(abs.(qdiff)))
+    #     println("Update failed. Falling back to EM update.")
+    #     # qf!(qf, q, f)
+    #     em_q!(d, g, update2 ? :fallback2 : :fallback)
+    #     project_q!(q_next, d.idx)
+    #     # qf!(qf, q_next, f)
+    #     d.ll_new = loglikelihood(g, q_next, f, qf_small, K, d.skipmissing)
+    #     return
+    # end
 end
 
-function update_f!(d::AdmixData{T}, g::AbstractArray{T}, update2=false) where T
+function update_f!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=nothing) where T
 # function update_f!(f_next, g::AbstractArray{T}, f, q, fdiff, XtX, Xtz, qf) where T
     I, J, K = d.I, d.J, d.K
     fdiff, XtX, Xtz, qf_small = d.f_tmp, d.XtX_f, d.Xtz_f, d.qf_small
@@ -198,12 +207,19 @@ function update_f!(d::AdmixData{T}, g::AbstractArray{T}, update2=false) where T
 
     # qf!(qf, q, f)
     d.ll_prev = d.ll_new # loglikelihood(g, qf)
-    fill!(XtX, zero(T))
-    fill!(Xtz, zero(T))
-    # @time tiler_1d!(update_f_loop!, typeof(XtX), (XtX, Xtz, g, q, f, qf_thin), 1:I, 1:J, K)
-    @time tiler!(d.skipmissing ? update_f_loop_skipmissing! : update_f_loop!, 
-        typeof(XtX), (XtX, Xtz, g, q, f, qf_small), 1:I, 1:J, K)
-    # @time update_f_loop!(XtX, Xtz, g, q, qf, 1:I, 1:J, K)
+    @time if d_cu === nothing
+        fill!(XtX, zero(T))
+        fill!(Xtz, zero(T))
+        # @time tiler_1d!(update_f_loop!, typeof(XtX), (XtX, Xtz, g, q, f, qf_thin), 1:I, 1:J, K)
+        tiler!(d.skipmissing ? update_f_loop_skipmissing! : update_f_loop!, 
+            typeof(XtX), (XtX, Xtz, g, q, f, qf_small), 1:I, 1:J, K)
+        # @time update_f_loop!(XtX, Xtz, g, q, qf, 1:I, 1:J, K)
+    else
+        @assert d.skipmissing "`skipmissing`` must be true for GPU computation"
+        copyto_sync!([d_cu.q, d_cu.f], [q, f])
+        update_f_cuda!(d_cu, g)
+        copyto_sync!([XtX, Xtz], [d_cu.XtX_f, d_cu.Xtz_f])
+    end
 
     @time begin       
         Xtz .*= -1 
@@ -237,33 +253,34 @@ function update_f!(d::AdmixData{T}, g::AbstractArray{T}, update2=false) where T
         end
         # f_next .= f .+ fdiff
         project_f!(f_next)
-        println(maximum(abs.(fdiff)))
+        # println(maximum(abs.(fdiff)))
     end
     
+    # Line serach for step size
 
-    begin
-        tau = 1.0
-        # qf!(qf, q, f_next)
-        @time d.ll_new = loglikelihood(g, q, f_next, qf_small, K, d.skipmissing)
-        println("update_f: ", d.ll_new)
-        for cnt in 1:length(tau_schedule)
-            if d.ll_prev < d.ll_new
-                return
-            end
-            println(cnt)
-            tau = tau_schedule[cnt]
-            f_next .= f .+ tau .* fdiff
-            project_f!(f_next)
-            # qf!(qf, q, f_next)
-            d.ll_new = loglikelihood(g, q, f_next, qf_small, K, d.skipmissing)
-        end
-        println(maximum(abs.(fdiff)))
-        println("Update failed. Falling back to EM update.")
-        # qf!(qf, q, f)
-        em_f!(d, g, update2 ? :fallback2 : :fallback)
-        project_f!(f_next)
-        # qf!(qf, q, f_next)
-        d.ll_new = loglikelihood(g, q, f_next, qf_small, K, d.skipmissing)
-        return 
-    end
+    # begin
+    #     tau = 1.0
+    #     # qf!(qf, q, f_next)
+    #     @time d.ll_new = loglikelihood(g, q, f_next, qf_small, K, d.skipmissing)
+    #     println("update_f: ", d.ll_new)
+    #     for cnt in 1:length(tau_schedule)
+    #         if d.ll_prev < d.ll_new
+    #             return
+    #         end
+    #         println(cnt)
+    #         tau = tau_schedule[cnt]
+    #         f_next .= f .+ tau .* fdiff
+    #         project_f!(f_next)
+    #         # qf!(qf, q, f_next)
+    #         d.ll_new = loglikelihood(g, q, f_next, qf_small, K, d.skipmissing)
+    #     end
+    #     println(maximum(abs.(fdiff)))
+    #     println("Update failed. Falling back to EM update.")
+    #     # qf!(qf, q, f)
+    #     em_f!(d, g, update2 ? :fallback2 : :fallback)
+    #     project_f!(f_next)
+    #     # qf!(qf, q, f_next)
+    #     d.ll_new = loglikelihood(g, q, f_next, qf_small, K, d.skipmissing)
+    #     return 
+    # end
 end

@@ -17,6 +17,7 @@ function __init__()
         include("cuda/structs.jl")
         include("cuda/kernels.jl")
         include("cuda/runners.jl")
+        include("cuda/transfer.jl")
     end
 end
 end

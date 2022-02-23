@@ -111,7 +111,7 @@ end
 @inline function loglikelihood_loop(g::AbstractArray{T}, qf, irange, jrange, K) where T
     oneT = one(T)
     twoT = 2one(T)
-    r = zero(T)
+    r = zero(Float64)
     @turbo for j in jrange
         for i in irange
             gij = g[i, j]
@@ -125,7 +125,7 @@ end
 @inline function loglikelihood_loop_skipmissing(g::AbstractArray{T}, qf, irange, jrange, K) where T
     oneT = one(T)
     twoT = 2one(T)
-    r = zero(T)
+    r = zero(Float64)
     @turbo for j in jrange
         for i in irange
             gij = g[i, j]
@@ -139,7 +139,7 @@ end
 @inline function loglikelihood_loop(g::SnpLinAlg{T}, qf, irange, jrange, K) where T
     oneT = one(T)
     twoT = 2one(T)
-    rslt = zero(T)
+    rslt = zero(Float64)
     gmat = g.s.data
     g_map = T == Float64 ? g_map_Float64 : g_map_Float32
     @turbo for j in jrange
@@ -159,7 +159,7 @@ end
 @inline function loglikelihood_loop_skipmissing(g::SnpLinAlg{T}, qf, irange, jrange, K) where T
     oneT = one(T)
     twoT = 2one(T)
-    rslt = zero(T)
+    rslt = zero(Float64)
     gmat = g.s.data
     g_map = T == Float64 ? g_map_Float64 : g_map_Float32
     nonmissing_map = T == Float64 ? nonmissing_map_Float64 : nonmissing_map_Float32
@@ -182,7 +182,7 @@ end
     oneT = one(T)
     twoT = 2one(T)
     firsti, firstj = first(irange), first(jrange)
-    r = zero(T)
+    r = zero(Float64)
     @turbo for j in jrange
         for i in irange
             gij = g[i, j]
@@ -210,7 +210,7 @@ end
     oneT = one(T)
     twoT = 2one(T)
     # firsti, firstj = first(irange), first(jrange)
-    r = zero(T)
+    r = zero(Float64)
     @turbo for j in jrange
         for i in irange
             gij = g[i, j]
@@ -241,7 +241,7 @@ end
     twoT = 2one(T)
     firsti, firstj = first(irange), first(jrange)
     qf_block!(qf_small, q, f, irange, jrange, K)
-    r = zero(T)
+    r = zero(Float64)
     gmat = g.s.data
     g_map = T == Float64 ? g_map_Float64 : g_map_Float32
     @turbo for j in jrange
@@ -264,7 +264,7 @@ end
     twoT = 2one(T)
     firsti, firstj = first(irange), first(jrange)
     qf_block!(qf_small, q, f, irange, jrange, K)
-    r = zero(T)
+    r = zero(Float64)
     gmat = g.s.data
     g_map = T == Float64 ? g_map_Float64 : g_map_Float32
     nonmissing_map = T == Float64 ? nonmissing_map_Float64 : nonmissing_map_Float32
