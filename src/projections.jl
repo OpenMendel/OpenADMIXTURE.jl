@@ -12,7 +12,7 @@ function project_q!(b::AbstractVector{T}, idx::AbstractVector{Int}; pseudocount=
     b .-= pseudocount
     bget = false
 
-    sortperm!(idx, b, rev=true)
+    sortperm!(idx, b, rev=true) # this allocates something
     tsum = zero(T)
 
     @inbounds for i = 1:n-1

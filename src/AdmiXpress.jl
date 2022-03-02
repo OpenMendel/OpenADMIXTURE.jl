@@ -2,6 +2,7 @@ module AdmiXpress
 using Random, LoopVectorization
 import LinearAlgebra: svd, norm, diag, mul!
 import SnpArrays: SnpLinAlg
+using Base.Threads
 export AdmixData
 include("structs.jl")
 include("projections.jl")

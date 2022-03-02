@@ -55,9 +55,11 @@ function admixture_qn!(d::AdmixData{T}, g::AbstractArray{T}, iter::Int=30,
             update_UV!(d.U, d.V, d.x_flat, d.x_next_flat, d.x_next2_flat, i, d.Q)
             U_part = i < d.Q ? view(d.U, :, 1:i) : view(d.U, :, :)
             V_part = i < d.Q ? view(d.V, :, 1:i) : view(d.V, :, :)
+            println(d.U[1, 1])
+            println(d.V[1, 1])
             update_QN!(d.x_tmp_flat, d.x_next_flat, d.x_flat, U_part, V_part)
             project_f!(d.f_tmp)
-            project_q!(d.q_tmp, d.idx)
+            project_q!(d.q_tmp, d.idxv[1])
             # qf!(d.qf, d.q_tmp, d.f_tmp)
             ll_qn = if d_cu !== nothing
                 copyto_sync!([d_cu.f, d_cu.q], [d.f_tmp, d.q_tmp])

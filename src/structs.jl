@@ -51,32 +51,46 @@ mutable struct AdmixData{T}
     XtX_fv      :: TwoDSlice{T}
     Xtz_fv      :: OneDSlice{T}
 
-    qf_small    ::Matrix{T}   # 64 x 64
+    qf_small    :: Array{T, 3}   # 64 x 64
+    qf_smallv   :: TwoDSlice{T}
 
     U           ::Matrix{T}   # K(I + J) x Q
     V           ::Matrix{T}   # K(I + J) x Q
 
     # for QP
     v_kk        ::Matrix{T}   # K x K, a full svd of ones(1, K)
-    tmp_k       ::Vector{T}
-    tmp_k1      ::Vector{T}
-    tmp_k1_      ::Vector{T}
-    tmp_k2      ::Vector{T}
-    tmp_k2_      ::Vector{T}
-    tableau_k1  ::Matrix{T}   # (K + 1) x (K + 1)
-    tableau_k2  ::Matrix{T}   # (K + 2) x (K + 2)
-    swept       ::BitVector
 
+    tmp_k       ::Matrix{T}
+    tmp_k1      ::Matrix{T}
+    tmp_k1_      ::Matrix{T}
+    tmp_k2      ::Matrix{T}
+    tmp_k2_      ::Matrix{T}
+    tableau_k1  ::Array{T, 3}   # (K + 1) x (K + 1)
+    tableau_k2  ::Array{T, 3}   # (K + 2) x (K + 2)
+    swept       ::Matrix{Bool}
+
+    tmp_kv       ::OneDSlice{T}
+    tmp_k1v      ::OneDSlice{T}
+    tmp_k1_v      ::OneDSlice{T}
+    tmp_k2v      ::OneDSlice{T}
+    tmp_k2_v      ::OneDSlice{T}
+    tableau_k1v  ::TwoDSlice{T}   # (K + 1) x (K + 1)
+    tableau_k2v  ::TwoDSlice{T}   # (K + 2) x (K + 2)
+    sweptv       ::OneDSlice{Bool}
+
+    idx         ::Matrix{Int}
+    idxv        ::OneDSlice{Int}
+
+    # loglikelihoods
     ll_prev     ::Float64
     ll_new      ::Float64
-    idx         ::Array{Int}
-    snptmp      ::Array{T}
 end
 
 function AdmixData{T}(I, J, K, Q; skipmissing=true, seed=nothing) where T
     if seed !== nothing
         Random.seed!(seed)
     end
+    NT = nthreads()
     x = rand(T, K, I + J)
     x_next = similar(x)
     x_next2 = similar(x)
@@ -136,7 +150,8 @@ function AdmixData{T}(I, J, K, Q; skipmissing=true, seed=nothing) where T
 
     # qf = rand(T, I, J);
     maxL = tile_maxiter(typeof(Xtz_f))
-    qf_small = rand(T, maxL, maxL)
+    qf_small = rand(T, maxL, maxL, NT)
+    qf_smallv = [view(qf_small, :, :, t) for t in 1:NT]
     # qf_thin  = rand(T, I, maxL)
     # f_tmp = similar(f)
     # q_tmp = similar(q);
@@ -147,25 +162,37 @@ function AdmixData{T}(I, J, K, Q; skipmissing=true, seed=nothing) where T
     U = rand(T, K * (I+J), Q)
 
     _, _, vt = svd(ones(T, 1, K), full=true)
-    tmp_k = Vector{T}(undef, K)
-    tmp_k1 = Vector{T}(undef, K+1)
+    tmp_k = Matrix{T}(undef, K, NT)
+    tmp_kv = [view(tmp_k, :, t) for t in 1:NT]
+    tmp_k1 = Matrix{T}(undef, K+1, NT)
+    tmp_k1v = [view(tmp_k1, :, t) for t in 1:NT]
     tmp_k1_ = similar(tmp_k1)
-    tmp_k2 = Vector{T}(undef, K+2)
+    tmp_k1_v = [view(tmp_k1_, :, t) for t in 1:NT]
+    tmp_k2 = Matrix{T}(undef, K+2, NT)
+    tmp_k2v = [view(tmp_k2, :, t) for t in 1:NT]
     tmp_k2_ = similar(tmp_k2)
-    tableau_k1 = Matrix{T}(undef, K+1, K+1)
-    tableau_k2 = Matrix{T}(undef, K+2, K+2)
-    swept = trues(K)
+    tmp_k2_v = [view(tmp_k2_, :, t) for t in 1:NT]
+    tableau_k1 = Array{T, 3}(undef, K+1, K+1, NT)
+    tableau_k1v = [view(tableau_k1, :, :, t) for t in 1:NT]
+    tableau_k2 = Array{T, 3}(undef, K+2, K+2, NT)
+    tableau_k2v = [view(tableau_k2, :, :, t) for t in 1:NT]
+    swept = convert(Matrix{Bool}, trues(K, NT))
+    sweptv = [view(swept, :, t) for t in 1:NT]
+    idx = Array{Int}(undef, K, NT)
+    idxv = [view(idx, :, t) for t in 1:NT]
     # U_q = view(reshape(U, K, (I+J), Q), :, 1:I, :)
     # U_f = view(reshape(U, K, (I+J), Q), :, (I+1):(I+J), :)
-    snptmp = rand(T, 4)
 
     AdmixData{T}(I, J, K, Q, skipmissing, x, x_next, x_next2, x_tmp, 
         x_flat, x_next_flat, x_next2_flat, x_tmp_flat,
         q, q_next, q_next2, q_tmp, f, f_next, f_next2, f_tmp, 
         XtX_q, Xtz_q, XtX_f, Xtz_f, 
         qv, q_nextv, q_tmpv, fv, f_nextv, f_tmpv, XtX_qv, Xtz_qv, XtX_fv, Xtz_fv,
-        qf_small, U, V, vt, 
+        qf_small, qf_smallv, U, V, vt, 
         tmp_k, tmp_k1, tmp_k1_, tmp_k2, tmp_k2_, 
         tableau_k1, tableau_k2, swept,
-        NaN, NaN, Array{Int}(undef, K), snptmp)
+        tmp_kv, tmp_k1v, tmp_k1_v, tmp_k2v, tmp_k2_v,
+        tableau_k1v, tableau_k2v, sweptv,
+        idx, idxv,
+        NaN, NaN)
 end

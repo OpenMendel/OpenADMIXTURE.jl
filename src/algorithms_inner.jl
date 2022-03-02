@@ -2,7 +2,7 @@
     loglikelihood(g, qf)
 Compute loglikelihood.
 """
-function loglikelihood(g::AbstractArray{T}, q, f, qf_small, K, skipmissing) where T
+function loglikelihood(g::AbstractArray{T}, q, f, qf_small::AbstractArray{T, 3}, K, skipmissing) where T
     I = size(q, 2)
     J = size(f, 2)
     #K = 0 # dummy
@@ -16,7 +16,7 @@ function loglikelihood(g::AbstractArray{T}, q, f, qf_small, K, skipmissing) wher
     r
 end
 
-function loglikelihood(g::SnpLinAlg{T}, q, f, qf_small, K, skipmissing) where T
+function loglikelihood(g::SnpLinAlg{T}, q, f, qf_small::AbstractArray{T, 3}, K, skipmissing) where T
     I = size(q, 2)
     J = size(f, 2)
     #K = 0 # dummy
@@ -57,8 +57,10 @@ function em_q!(d::AdmixData{T}, g::AbstractArray{T}, mode=:base) where T
         q_next, q, f = d.q_next2, d.q_next, d.f_next
     end
     fill!(q_next, zero(T))
-    @time tiler!(d.skipmissing ? em_q_loop_skipmissing! : em_q_loop!, 
-        typeof(q_next), (q_next, g, q, f, qf_small), 1:I, 1:J, K)
+    @time threader!(d.skipmissing ? em_q_loop_skipmissing! : em_q_loop!,
+        typeof(q_next), (q_next, g, q, f, qf_small), 1:I, 1:J, K, true; maxL=64)
+    # @time tiler!(d.skipmissing ? em_q_loop_skipmissing! : em_q_loop!, 
+    #     typeof(q_next), (q_next, g, q, f, qf_small), 1:I, 1:J, K)
     # @time em_q_loop!(q_next, g, q, f, qf, 1:I, 1:J, K)
     q_next ./= 2J
     # @tullio q_new[k, i] = (g[i, j] * q[k, i] * f[k, j] / qf[i, j] + 
@@ -79,8 +81,10 @@ function em_f!(d::AdmixData{T}, g::AbstractArray{T}, mode=:base) where T
     fill!(f_tmp, zero(T))
     fill!(f_next, zero(T))
 
-    @time tiler!(d.skipmissing ? em_f_loop_skipmissing! : em_f_loop!, 
-        typeof(f_next), (f_next, g, q, f, f_tmp, qf_small), 1:I, 1:J, K)
+    @time threader!(d.skipmissing ? em_f_loop_skipmissing! : em_f_loop!, 
+        typeof(f_next), (f_next, g, q, f, f_tmp, qf_small), 1:I, 1:J, K, false; maxL=64)
+    # @time tiler!(d.skipmissing ? em_f_loop_skipmissing! : em_f_loop!, 
+    #     typeof(f_next), (f_next, g, q, f, f_tmp, qf_small), 1:I, 1:J, K)
     # @time em_f_loop!(f_next, g, q, f, f_tmp, qf_small, 1:I, 1:J, K)
     @turbo for j in 1:J
         for k in 1:K
@@ -112,9 +116,10 @@ function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=not
     @time if d_cu === nothing
         fill!(XtX, zero(T))
         fill!(Xtz, zero(T))
-        # @time tiler!(update_q_loop!, T, (XtX, Xtz, g, f, qf), 1:I, 1:J, K)
-        tiler!(d.skipmissing ? update_q_loop_skipmissing! : update_q_loop!, 
-            typeof(XtX), (XtX, Xtz, g, q, f, qf_small), 1:I, 1:J, K)
+        threader!(d.skipmissing ? update_q_loop_skipmissing! : update_q_loop!, 
+            typeof(XtX), (XtX, Xtz, g, q, f, qf_small), 1:I, 1:J, K, true; maxL=16)
+        # tiler!(d.skipmissing ? update_q_loop_skipmissing! : update_q_loop!, 
+        #     typeof(XtX), (XtX, Xtz, g, q, f, qf_small), 1:I, 1:J, K)
         #update_q_loop!(XtX, Xtz, g, f, qf, 1:I, 1:J, K)
     else
         @assert d.skipmissing "`skipmissing`` must be true for GPU computation"
@@ -123,6 +128,7 @@ function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=not
         copyto_sync!([XtX, Xtz], [d_cu.XtX_q, d_cu.Xtz_q])
     end
 
+    # println(Xtz)
     @time begin
         # for QP formulation
         Xtz .*= -1 
@@ -139,7 +145,7 @@ function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=not
         # Xtz_ = @MVector zeros(T, K)
         # q_   = @MVector zeros(T, K)
         # qdiff_ = @MVector zeros(T, K)
-        @inbounds  for i in 1:I
+        @threads for i in 1:I
             # XtX_ = unsafe_wrap(Array{T,2}, pointer(XtX, (i-1) * K * K + 1), (K,K))
             XtX_ = XtXv[i]#view(XtX, :, :, i)
             # Xtz_ = unsafe_wrap(Array{T, 1}, pointer(Xtz, (i-1) * K + 1), (K,))
@@ -148,11 +154,18 @@ function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=not
             q_ = qv[i]#view(q, :, i)
             # qdiff_ = unsafe_wrap(Array{T, 1}, pointer(qdiff, (i-1) * K + 1), (K,))
             qdiff_ = qdiffv[i]#view(qdiff, :, i)
+
+            t = threadid()
+            tableau_k2 = d.tableau_k2v[t]
+            tmp_k = d.tmp_kv[t]
+            tmp_k2 = d.tmp_k2v[t]
+            tmp_k2_ = d.tmp_k2_v[t]
+            swept = d.sweptv[t]
             
-            create_tableau!(d.tableau_k2, XtX_, Xtz_, q_, d.v_kk, d.tmp_k, true)
+            create_tableau!(tableau_k2, XtX_, Xtz_, q_, d.v_kk, tmp_k, true)
             # tableau = create_tableau(XtX_, Xtz_, matrix_a, b, q_)
-            quadratic_program!(qdiff_, d.tableau_k2, q_, pmin, pmax, K, 1, 
-                d.tmp_k2, d.tmp_k2_, d.swept) 
+            quadratic_program!(qdiff_, tableau_k2, q_, pmin, pmax, K, 1, 
+                tmp_k2, tmp_k2_, swept)
         end
         @turbo for i in 1:I
             for k in 1:K
@@ -160,7 +173,7 @@ function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=not
             end
         end
         # q_next .= q .+ qdiff
-        project_q!(q_next, d.idx)
+        project_q!(q_next, d.idxv[1])
     end
 
     # Line serach for step size
@@ -211,8 +224,10 @@ function update_f!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=not
         fill!(XtX, zero(T))
         fill!(Xtz, zero(T))
         # @time tiler_1d!(update_f_loop!, typeof(XtX), (XtX, Xtz, g, q, f, qf_thin), 1:I, 1:J, K)
-        tiler!(d.skipmissing ? update_f_loop_skipmissing! : update_f_loop!, 
-            typeof(XtX), (XtX, Xtz, g, q, f, qf_small), 1:I, 1:J, K)
+        threader!(d.skipmissing ? update_f_loop_skipmissing! : update_f_loop!, 
+            typeof(XtX), (XtX, Xtz, g, q, f, qf_small), 1:I, 1:J, K, false; maxL=16)
+        # tiler!(d.skipmissing ? update_f_loop_skipmissing! : update_f_loop!, 
+        #     typeof(XtX), (XtX, Xtz, g, q, f, qf_small), 1:I, 1:J, K)
         # @time update_f_loop!(XtX, Xtz, g, q, qf, 1:I, 1:J, K)
     else
         @assert d.skipmissing "`skipmissing`` must be true for GPU computation"
@@ -228,7 +243,7 @@ function update_f!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=not
         pmin = zeros(T, K)
         pmax = ones(T, K)
         
-        @inbounds for j in 1:J
+        @threads for j in 1:J
             # XtX_ = unsafe_wrap(Array{T, 2}, pointer(XtX, (j-1) * K * K + 1), (K,K))
             XtX_ = XtXv[j]# view(XtX, :, :, j)
             # Xtz_ = unsafe_wrap(Array{T, 1}, pointer(Xtz, (j-1) * K + 1), (K,))
@@ -237,12 +252,19 @@ function update_f!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=not
             f_ = fv[j] #view(f, :, j)
             # fdiff_ = unsafe_wrap(Array{T, 1}, pointer(fdiff, (j-1) * K + 1), (K,))
             fdiff_ = fdiffv[j] #view(fdiff, :, j)
-            
-            create_tableau!(d.tableau_k1, XtX_, Xtz_, f_, d.v_kk, d.tmp_k, false)
+
+            t = threadid()
+            tableau_k1 = d.tableau_k1v[t]
+            tmp_k = d.tmp_kv[t]
+            tmp_k1 = d.tmp_k1v[t]
+            tmp_k1_ = d.tmp_k1_v[t]
+            swept = d.sweptv[t]
+
+            create_tableau!(tableau_k1, XtX_, Xtz_, f_, d.v_kk, tmp_k, false)
             # tableau = create_tableau(XtX_, Xtz_, matrix_a, b, f_)
             # println(diag(tableau))
-            quadratic_program!(fdiff_, d.tableau_k1, f_, pmin, pmax, K, 0,
-                d.tmp_k1, d.tmp_k1_, d.swept) 
+            quadratic_program!(fdiff_, tableau_k1, f_, pmin, pmax, K, 0,
+                tmp_k1, tmp_k1_, swept) 
             # fdiff_ .= fd     
      
         end

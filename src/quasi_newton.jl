@@ -1,8 +1,5 @@
 function update_UV!(U, V, x, x_next, x_next2, iter, Q)
-    idx = iter % Q + 1
-    println(size(U))
-    println(size(x_next2))
-    println(size(x_next))
+    idx = (iter - 1) % Q + 1
     V[:, idx] .= x_next2 .- x_next
     U[:, idx] .= x_next .- x
 end

@@ -21,7 +21,7 @@ function create_tableau!(tableau::AbstractMatrix{T},
     #
     @turbo for j in 1:K
         for i in 1:K
-        tableau[i, j] = matrix_q[i, j]
+            tableau[i, j] = matrix_q[i, j]
         end
     end
     @turbo for i in 1:K
@@ -53,8 +53,9 @@ function create_tableau!(tableau::AbstractMatrix{T},
                 tableau[i, j] += mu
             end
         end
-        @turbo for i in 1:K
+        @inbounds for i in 1:K
             tableau[K+1, i] = one(T)
+            tableau[i, K+1] = one(T)
         end
         tableau[K+1, K+1] = zero(T)
         tableau[K+2, K+1] = tableau[K+1, K+2] = one(T) - sum(x)
@@ -107,7 +108,7 @@ North Carolina State University.
 """
 function quadratic_program!(delta::AbstractVector{T}, tableau::AbstractMatrix{T}, par::AbstractVector{T},
     pmin::AbstractVector{T}, pmax::AbstractVector{T}, p::Int, c::Int, d::AbstractVector{T}, 
-    tmp::AbstractVector{T}, swept::BitVector) where T
+    tmp::AbstractVector{T}, swept::AbstractVector{Bool}) where T
 
     # delta = zeros(T, size(par))
     fill!(delta, zero(T))
