@@ -10,8 +10,8 @@ function loglikelihood(g::CuArray{UInt8, 2}, q::CuArray{T, 2}, f::CuArray{T, 2},
     out[]
 end
 
-function loglikelihood(d::CuAdmixData{T}, g::SnpLinAlg{T}) where T
-    I, J, K = size(d.q, 2), size(g, 2), size(d.q, 1)
+function loglikelihood(d::CuAdmixData{T}, g_cu::CuMatrix{UInt8}) where T
+    I, J, K = size(d.q, 2), size(g_cu, 2), size(d.q, 1)
     if J == size(d.f, 2)
         return loglikelihood(d.g, d.q, d.f, I, J)
     else
@@ -33,10 +33,10 @@ function em_q!(q_next, g::CuArray{UInt8, 2},
     q_next
 end
 
-function em_q!(d::CuAdmixData{T}, g::SnpLinAlg{T}) where T
-    I, J, K = size(d.q, 2), size(g, 2), size(d.q, 1)
+function em_q!(d::CuAdmixData{T}, g_cu::CuMatrix{UInt8}) where T
+    I, J, K = size(d.q, 2), size(g_cu, 2), size(d.q, 1)
     if J == size(d.f, 2)
-        em_q!(d.q_next, d.g, d.q, d.f, I, J)
+        em_q!(d.q_next, g_cu, d.q, d.f, I, J)
     else
         @assert false "Not implemented"
     end   
@@ -57,10 +57,10 @@ function em_f!(f_next, f_tmp, g::CuArray{UInt8, 2},
     f_next
 end
 
-function em_f!(d::CuAdmixData{T}, g::SnpLinAlg{T}) where T
-    I, J, K = size(d.q, 2), size(g, 2), size(d.q, 1)
+function em_f!(d::CuAdmixData{T}, g_cu::CuMatrix{UInt8}) where T
+    I, J, K = size(d.q, 2), size(g_cu, 2), size(d.q, 1)
     if J == size(d.f, 2)
-        em_f!(d.f_next, d.f_tmp, d.g, d.q, d.f, I, J)
+        em_f!(d.f_next, d.f_tmp, g_cu, d.q, d.f, I, J)
     else
         @assert false "Not implemented"
     end   
@@ -79,10 +79,10 @@ function update_q_cuda!(XtX, Xtz, g, q, f, I, J)
     nothing
 end
 
-function update_q_cuda!(d::CuAdmixData{T}, g::SnpLinAlg{T}) where T
+function update_q_cuda!(d::CuAdmixData{T}, g_cu::CuMatrix{UInt8}) where T
     I, J, K = size(d.q, 2), size(g, 2), size(d.q, 1)
     if J == size(d.f, 2)
-        update_q_cuda!(d.XtX_q, d.Xtz_q, d.g, d.q, d.f, I, J)
+        update_q_cuda!(d.XtX_q, d.Xtz_q, g_cu, d.q, d.f, I, J)
     else
         @assert false "Not implemented"
     end   
@@ -101,10 +101,10 @@ function update_f_cuda!(XtX, Xtz, g, q, f, I, J)
     nothing
 end
 
-function update_f_cuda!(d::CuAdmixData{T}, g::SnpLinAlg{T}) where T
-    I, J, K = size(d.q, 2), size(g, 2), size(d.q, 1)
+function update_f_cuda!(d::CuAdmixData{T}, g_cu::CuMatrix{UInt8}) where T
+    I, J, K = size(d.q, 2), size(g_cu, 2), size(d.q, 1)
     if J == size(d.f, 2)
-        update_f_cuda!(d.XtX_f, d.Xtz_f, d.g, d.q, d.f, I, J)
+        update_f_cuda!(d.XtX_f, d.Xtz_f, g_cu, d.q, d.f, I, J)
     else
         @assert false "Not implemented"
     end   

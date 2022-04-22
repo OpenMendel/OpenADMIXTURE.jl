@@ -98,7 +98,7 @@ end
 
 const tau_schedule = collect(0.7^i for i in 1:10)
 
-function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=nothing) where T
+function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=nothing, g_cu=nothing) where T
 # function update_q!(q_next, g::AbstractArray{T}, q, f, qdiff, XtX, Xtz, qf) where T
     I, J, K = d.I, d.J, d.K
     qdiff, XtX, Xtz, qf_small = d.q_tmp, d.XtX_q, d.Xtz_q, d.qf_small
@@ -124,7 +124,7 @@ function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=not
     else
         @assert d.skipmissing "`skipmissing`` must be true for GPU computation"
         copyto_sync!([d_cu.q, d_cu.f], [q, f])
-        update_q_cuda!(d_cu, g)
+        update_q_cuda!(d_cu, g_cu)
         copyto_sync!([XtX, Xtz], [d_cu.XtX_q, d_cu.Xtz_q])
     end
 
@@ -205,7 +205,7 @@ function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=not
     # end
 end
 
-function update_f!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=nothing) where T
+function update_f!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=nothing, g_cu=nothing) where T
 # function update_f!(f_next, g::AbstractArray{T}, f, q, fdiff, XtX, Xtz, qf) where T
     I, J, K = d.I, d.J, d.K
     fdiff, XtX, Xtz, qf_small = d.f_tmp, d.XtX_f, d.Xtz_f, d.qf_small
@@ -232,7 +232,7 @@ function update_f!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=not
     else
         @assert d.skipmissing "`skipmissing`` must be true for GPU computation"
         copyto_sync!([d_cu.q, d_cu.f], [q, f])
-        update_f_cuda!(d_cu, g)
+        update_f_cuda!(d_cu, g_cu)
         copyto_sync!([XtX, Xtz], [d_cu.XtX_f, d_cu.Xtz_f])
     end
 

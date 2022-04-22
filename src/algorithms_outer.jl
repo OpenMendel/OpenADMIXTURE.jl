@@ -1,25 +1,26 @@
-function init_em!(d::AdmixData{T}, g::AbstractArray{T}, iter::Integer; d_cu=nothing) where T
+function init_em!(d::AdmixData{T}, g::AbstractArray{T}, iter::Integer; d_cu=nothing, g_cu=nothing) where T
     # qf!(d.qf, d.q, d.f)
     if d_cu !== nothing
         copyto_sync!([d_cu.q, d_cu.f], [d.q, d.f])
     end
     d_ = (d_cu === nothing) ? d : d_cu
+    g_ = (g_cu === nothing) ? g : g_cu
     for _ in 1:iter
-        em_q!(d_, g)
-        em_f!(d_, g)
+        em_q!(d_, g_)
+        em_f!(d_, g_)
         d_.f .= d_.f_next
         d_.q .= d_.q_next
     end
     if d_cu !== nothing
         copyto_sync!([d.f, d.q], [d_cu.f, d_cu.q])
-        d.ll_new = loglikelihood(d_cu, g)
+        d.ll_new = loglikelihood(d_cu, g_cu)
     else
         d.ll_new = loglikelihood(g, d.q, d.f, d.qf_small, d.K, d.skipmissing)
     end
 end
 
 function admixture_qn!(d::AdmixData{T}, g::AbstractArray{T}, iter::Int=30, 
-    rtol= 1e-7; d_cu=nothing) where T
+    rtol= 1e-7; d_cu=nothing, g_cu=nothing) where T
     # qf!(d.qf, d.q, d.f)
     # ll_prev = loglikelihood(g, d.q, d.f, d.qf_small, d.K, d.skipmissing)
     # d.ll_new = ll_prev
@@ -27,7 +28,7 @@ function admixture_qn!(d::AdmixData{T}, g::AbstractArray{T}, iter::Int=30,
     if isnan(d.ll_new)
         if d_cu !== nothing
             copyto_sync!([d_cu.f, d_cu.q], [d.f, d.q])
-            d.ll_new = loglikelihood(d_cu, g)
+            d.ll_new = loglikelihood(d_cu, g_cu)
         else
             d.ll_new = loglikelihood(g, d.q, d.f, d.qf_small, d.K, d.skipmissing)
         end
@@ -47,7 +48,7 @@ function admixture_qn!(d::AdmixData{T}, g::AbstractArray{T}, iter::Int=30,
             # qf!(d.qf, d.q_next2, d.f_next2)
             ll_basic = if d_cu !== nothing
                 copyto_sync!([d_cu.f, d_cu.q], [d.f_next2, d.q_next2])
-                loglikelihood(d_cu, g)
+                loglikelihood(d_cu, g_cu)
             else
                 loglikelihood(g, d.q_next2, d.f_next2, d.qf_small, d.K, d.skipmissing)
             end
@@ -63,7 +64,7 @@ function admixture_qn!(d::AdmixData{T}, g::AbstractArray{T}, iter::Int=30,
             # qf!(d.qf, d.q_tmp, d.f_tmp)
             ll_qn = if d_cu !== nothing
                 copyto_sync!([d_cu.f, d_cu.q], [d.f_tmp, d.q_tmp])
-                loglikelihood(d_cu, g)
+                loglikelihood(d_cu, g_cu)
             else
                 loglikelihood(g, d.q_tmp, d.f_tmp, d.qf_small, d.K, d.skipmissing)
             end
