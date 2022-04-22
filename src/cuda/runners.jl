@@ -80,7 +80,7 @@ function update_q_cuda!(XtX, Xtz, g, q, f, I, J)
 end
 
 function update_q_cuda!(d::CuAdmixData{T}, g_cu::CuMatrix{UInt8}) where T
-    I, J, K = size(d.q, 2), size(g, 2), size(d.q, 1)
+    I, J, K = size(d.q, 2), size(g_cu, 2), size(d.q, 1)
     if J == size(d.f, 2)
         update_q_cuda!(d.XtX_q, d.Xtz_q, g_cu, d.q, d.f, I, J)
     else
