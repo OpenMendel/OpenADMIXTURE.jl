@@ -13,7 +13,7 @@ end
 function loglikelihood(d::CuAdmixData{T}, g_cu::CuMatrix{UInt8}) where T
     I, J, K = size(d.q, 2), size(g_cu, 2), size(d.q, 1)
     if J == size(d.f, 2)
-        return loglikelihood(d.g, d.q, d.f, I, J)
+        return loglikelihood(g_cu, d.q, d.f, I, J)
     else
         @assert false "Not implemented"
     end
