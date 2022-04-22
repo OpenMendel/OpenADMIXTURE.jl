@@ -15,9 +15,9 @@ function CuAdmixData(d::AdmixData{T}, g::SnpLinAlg{T}, width=d.J) where T
     @assert d.skipmissing "skipmissing must be true for CuAdmixData."
     Ibytes = (I + 3) ÷ 4
     # g_cu = CuArray{UInt8, 2}(undef, Ibytes, width)
-    if size(g, 2) == J
-        copyto!(g_cu, g.s.data)
-    end
+    # if size(g, 2) == J
+    #     copyto!(g_cu, g.s.data)
+    # end
     q = CuArray{T, 2}(undef, K, I)
     q_next = similar(q)
     f = CuArray{T, 2}(undef, K, J)
