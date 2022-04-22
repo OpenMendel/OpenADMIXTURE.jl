@@ -40,10 +40,10 @@ function admixture_qn!(d::AdmixData{T}, g::AbstractArray{T}, iter::Int=30,
             # qf!(d.qf, d.q, d.f)
             # ll_prev = loglikelihood(g, d.qf)
             d.ll_prev = d.ll_new
-            update_q!(d, g; d_cu=d_cu)
-            update_f!(d, g; d_cu=d_cu)
-            update_q!(d, g, true; d_cu=d_cu)
-            update_f!(d, g, true; d_cu=d_cu)
+            update_q!(d, g; d_cu=d_cu, g_cu=g_cu)
+            update_f!(d, g; d_cu=d_cu, g_cu=g_cu)
+            update_q!(d, g, true; d_cu=d_cu, g_cu=g_cu)
+            update_f!(d, g, true; d_cu=d_cu, g_cu=g_cu)
 
             # qf!(d.qf, d.q_next2, d.f_next2)
             ll_basic = if d_cu !== nothing
