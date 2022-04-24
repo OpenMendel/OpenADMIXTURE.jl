@@ -28,7 +28,7 @@ function update_QN_LBQN!(x_next, x, x_q, x_r, U, V)
     alpha = zeros(Q)
     
     @inbounds for i in 1:Q
-        rho = 1 / dot(@view(V[:, j]), @view(V[:, i]))
+        rho = 1 / dot(@view(V[:, i]), @view(V[:, i]))
         alpha[i] = rho * dot(@view(V[:, i]), x_q)
         x_q .= x_q .- alpha[i] .* @view(V[:, i])
     end
@@ -37,6 +37,6 @@ function update_QN_LBQN!(x_next, x, x_q, x_r, U, V)
     @inbounds for i in 1:Q
         x_r .= x_r .+ alpha[i] .* @view(U[:, i])
     end
-    
+
     x_next .= x .- x_r
 end
