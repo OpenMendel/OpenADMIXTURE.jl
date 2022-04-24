@@ -189,7 +189,6 @@ end
             r += (gij * log(qf[i, j]) + (twoT - gij) * log(oneT - qf[i, j]))
         end
     end
-    # @tullio r = g[i, j] * log(qf[i, j]) + (2 - g[i, j]) * log(1 - qf[i, j])
     r
 end
 

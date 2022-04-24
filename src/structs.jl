@@ -23,6 +23,10 @@ mutable struct AdmixData{T}
     x_next2_flat::Vector{T}
     x_tmp_flat  ::Vector{T}
 
+    # intermediate vectors for LBQN
+    x_qq        ::Vector{T}
+    x_rr        ::Vector{T}
+
     q           ::SAT{T} # K x I
     q_next      ::SAT{T}
     q_next2     ::SAT{T}
@@ -100,6 +104,9 @@ function AdmixData{T}(I, J, K, Q; skipmissing=true, seed=nothing) where T
     x_next_flat = reshape(x_next, :)
     x_next2_flat = reshape(x_next2, :)
     x_tmp_flat = reshape(x_tmp, :)
+
+    x_qq = similar(x_flat)
+    x_rr = similar(x_flat)
 
     q       = view(x      , :, 1:I)#rand(T, K, J) 
     q       = unsafe_wrap(Array, pointer(q), size(q))
@@ -185,6 +192,7 @@ function AdmixData{T}(I, J, K, Q; skipmissing=true, seed=nothing) where T
 
     AdmixData{T}(I, J, K, Q, skipmissing, x, x_next, x_next2, x_tmp, 
         x_flat, x_next_flat, x_next2_flat, x_tmp_flat,
+        x_qq, x_rr,
         q, q_next, q_next2, q_tmp, f, f_next, f_next2, f_tmp, 
         XtX_q, Xtz_q, XtX_f, Xtz_f, 
         qv, q_nextv, q_tmpv, fv, f_nextv, f_tmpv, XtX_qv, Xtz_qv, XtX_fv, Xtz_fv,

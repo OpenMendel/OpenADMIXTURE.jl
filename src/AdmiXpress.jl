@@ -1,6 +1,6 @@
 module AdmiXpress
 using Random, LoopVectorization
-import LinearAlgebra: svd, norm, diag, mul!
+import LinearAlgebra: svd, norm, diag, mul!, dot
 import SnpArrays: SnpLinAlg
 using Base.Threads
 export AdmixData
