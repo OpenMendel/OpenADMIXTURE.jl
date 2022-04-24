@@ -63,7 +63,7 @@ function admixture_qn!(d::AdmixData{T}, g::AbstractArray{T}, iter::Int=30,
                 update_UV_LBQN!(d.U, d.V, d.x_flat, d.x_next_flat, d.x_next2_flat, i, d.Q)
                 U_part = i < d.Q ? view(d.U, :, 1:i) : view(d.U, :, :)
                 V_part = i < d.Q ? view(d.V, :, 1:i) : view(d.V, :, :)
-                update_QN_LBQN!(d.x_tmp_flat, d.x_qq, d.x_rr, U_part, V_part)
+                update_QN_LBQN!(d.x_tmp_flat, d.x_flat, d.x_qq, d.x_rr, U_part, V_part)
             else 
                 @assert false "Invalid mode"
             end
