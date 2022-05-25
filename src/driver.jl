@@ -18,10 +18,10 @@ function run_admixture(filename, K;
         admix_input = filename
         clusters, aims = nothing, nothing
     end
-    _admixture_base(admix_input, K; 
+    d = _admixture_base(admix_input, K; 
         n_iter=admix_n_iter, rtol=admix_rtol, rng=rng, em_iters=admix_em_iters, 
         T=T, Q=Q, use_gpu=use_gpu)
-
+    d, clusters, aims
 end
 
 function _filter_SKFR(filename, K, sparsity::Integer; 
@@ -40,7 +40,8 @@ function _filter_SKFR(filename, K, sparsity::Integer;
     I, J = size(g)
     aims_sorted = sort(aims)
     des = "$(prefix)_$(K)_$(sparsity)aims"
-    SnpArrays.filter(prefix, trues(I), aims_sorted; des=des)
+    println(des)
+    SnpArrays.filter(filename[1:end-4], trues(I), aims_sorted; des=des)
     des * ".bed", clusters, aims
 end
 
@@ -61,7 +62,7 @@ function _filter_SKFR(filename, K, sparsities::AbstractVector{<:Integer};
     for (s, aimlist) in zip(sparsities, aims)
         aimlist_sorted = sort(aimlist)
         des = "$(prefix)_$(K)_$(s)aims"
-        SnpArrays.filter(prefix, trues(I), aimlist_sorted; des=des)
+        SnpArrays.filter(filename[1:end-4], trues(I), aimlist_sorted; des=des)
         push!(outputfiles, des)
     end
     outputfiles, clusters, aims
