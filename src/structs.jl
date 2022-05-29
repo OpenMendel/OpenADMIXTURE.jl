@@ -92,7 +92,7 @@ end
 
 function AdmixData{T}(I, J, K, Q; skipmissing=true, rng=Random.GLOBAL_RNG) where T
     NT = nthreads()
-    x = rand(rng, T, K, I + J)
+    x = convert(Array{T}, rand(rng, K, I + J))
     x_next = similar(x)
     x_next2 = similar(x)
     x_tmp = similar(x)
@@ -124,11 +124,11 @@ function AdmixData{T}(I, J, K, Q; skipmissing=true, rng=Random.GLOBAL_RNG) where
     f_tmp   = view(x_tmp, :, (I+1):(I+J))
     f_tmp   = unsafe_wrap(Array, pointer(f_tmp), size(f_tmp))
 
-    XtX_q = rand(rng, T, K, K, I)
-    Xtz_q = rand(rng, T, K, I)
+    XtX_q = convert(Array{T}, rand(rng, K, K, I))
+    Xtz_q = convert(Array{T}, rand(rng, K, I))
 
-    XtX_f = rand(rng, T, K, K, J)
-    Xtz_f = rand(rng, T, K, J)
+    XtX_f = convert(Array{T}, rand(rng, K, K, J))
+    Xtz_f = convert(Array{T}, rand(rng,  K, J))
 
     qv          = [view(q, :, i) for i in 1:I]
     q_nextv     = [view(q_next, :, i) for i in 1:I]
@@ -154,16 +154,16 @@ function AdmixData{T}(I, J, K, Q; skipmissing=true, rng=Random.GLOBAL_RNG) where
 
     # qf = rand(T, I, J);
     maxL = tile_maxiter(typeof(Xtz_f))
-    qf_small = rand(rng, T, maxL, maxL, NT)
+    qf_small = convert(Array{T}, rand(rng, maxL, maxL, NT))
     qf_smallv = [view(qf_small, :, :, t) for t in 1:NT]
     # qf_thin  = rand(T, I, maxL)
     # f_tmp = similar(f)
     # q_tmp = similar(q);
 
-    V = rand(rng, T, K * (I+J), Q)
+    V = convert(Array{T}, rand(rng, K * (I+J), Q))
     # V_q = view(reshape(V, K, (I+J), Q), :, 1:I, :)
     # V_f = view(reshape(V, K, (I+J), Q), :, (I+1):(I+J), :)
-    U = rand(rng, T, K * (I+J), Q)
+    U = convert(Array{T}, rand(rng, K * (I+J), Q))
 
     _, _, vt = svd(ones(T, 1, K), full=true)
     tmp_k = Matrix{T}(undef, K, NT)
