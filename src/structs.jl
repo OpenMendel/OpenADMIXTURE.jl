@@ -32,31 +32,31 @@ mutable struct AdmixData{T}
     q_next2     ::SAT{T}
     q_tmp       ::SAT{T}
 
-    f           ::SAT{T} # K x J
-    f_next      ::SAT{T}
-    f_next2     ::SAT{T}
-    f_tmp       ::SAT{T}
+    p           ::SAT{T} # K x J
+    p_next      ::SAT{T}
+    p_next2     ::SAT{T}
+    p_tmp       ::SAT{T}
 
     XtX_q       ::Array{T, 3} # K x K x I
     Xtz_q       ::Matrix{T}   # K x I
-    XtX_f       ::Array{T, 3} # K x K x J
-    Xtz_f       ::Matrix{T}   # K x J
+    XtX_p       ::Array{T, 3} # K x K x J
+    Xtz_p       ::Matrix{T}   # K x J
 
     # views
     qv          :: OneDSlice{T}
     q_nextv     :: OneDSlice{T}
     q_tmpv      :: OneDSlice{T}
-    fv          :: OneDSlice{T}
-    f_nextv     :: OneDSlice{T}
-    f_tmpv      :: OneDSlice{T}
+    pv          :: OneDSlice{T}
+    p_nextv     :: OneDSlice{T}
+    p_tmpv      :: OneDSlice{T}
 
     XtX_qv      :: TwoDSlice{T}
     Xtz_qv      :: OneDSlice{T}
-    XtX_fv      :: TwoDSlice{T}
-    Xtz_fv      :: OneDSlice{T}
+    XtX_pv      :: TwoDSlice{T}
+    Xtz_pv      :: OneDSlice{T}
 
-    qf_small    :: Array{T, 3}   # 64 x 64
-    qf_smallv   :: TwoDSlice{T}
+    qp_small    :: Array{T, 3}   # 64 x 64
+    qp_smallv   :: TwoDSlice{T}
 
     U           ::Matrix{T}   # K(I + J) x Q
     V           ::Matrix{T}   # K(I + J) x Q
@@ -90,6 +90,18 @@ mutable struct AdmixData{T}
     ll_new      ::Float64
 end
 
+"""
+    AdmixData{T}(I, J, K, Q; skipmissing=true, rng=Random.GLOBAL_RNG)
+Constructor for Admixture information.
+
+# Arguments:
+- I: Number of samples
+- J: Number of variants
+- K: Number of clusters
+- Q: Number of steps used for quasi-Newton update
+- skipmissing: skip computation of loglikelihood for missing values. Should be kept `true` in most cases
+- rng: Random number generation.
+"""
 function AdmixData{T}(I, J, K, Q; skipmissing=true, rng=Random.GLOBAL_RNG) where T
     NT = nthreads()
     x = convert(Array{T}, rand(rng, K, I + J))
@@ -115,32 +127,32 @@ function AdmixData{T}(I, J, K, Q; skipmissing=true, rng=Random.GLOBAL_RNG) where
     q_tmp  = unsafe_wrap(Array, pointer(q_tmp), size(q_tmp))
     q ./= sum(q, dims=1)
 
-    f       = view(x      , :, (I+1):(I+J))#rand(T, K, J) 
-    f       = unsafe_wrap(Array, pointer(f), size(f))
-    f_next  = view(x_next , :, (I+1):(I+J))
-    f_next  = unsafe_wrap(Array, pointer(f_next), size(f_next))
-    f_next2 = view(x_next2, :, (I+1):(I+J))
-    f_next2 = unsafe_wrap(Array, pointer(f_next2), size(f_next2))
-    f_tmp   = view(x_tmp, :, (I+1):(I+J))
-    f_tmp   = unsafe_wrap(Array, pointer(f_tmp), size(f_tmp))
+    p       = view(x      , :, (I+1):(I+J))#rand(T, K, J) 
+    p       = unsafe_wrap(Array, pointer(p), size(p))
+    p_next  = view(x_next , :, (I+1):(I+J))
+    p_next  = unsafe_wrap(Array, pointer(p_next), size(p_next))
+    p_next2 = view(x_next2, :, (I+1):(I+J))
+    p_next2 = unsafe_wrap(Array, pointer(p_next2), size(p_next2))
+    p_tmp   = view(x_tmp, :, (I+1):(I+J))
+    p_tmp   = unsafe_wrap(Array, pointer(p_tmp), size(p_tmp))
 
     XtX_q = convert(Array{T}, rand(rng, K, K, I))
     Xtz_q = convert(Array{T}, rand(rng, K, I))
 
-    XtX_f = convert(Array{T}, rand(rng, K, K, J))
-    Xtz_f = convert(Array{T}, rand(rng,  K, J))
+    XtX_p = convert(Array{T}, rand(rng, K, K, J))
+    Xtz_p = convert(Array{T}, rand(rng,  K, J))
 
     qv          = [view(q, :, i) for i in 1:I]
     q_nextv     = [view(q_next, :, i) for i in 1:I]
     q_tmpv     = [view(q_tmp, :, i) for i in 1:I]
-    fv          = [view(f, :, j) for j in 1:J]
-    f_nextv     = [view(f_next, :, j) for j in 1:J]
-    f_tmpv     = [view(f_tmp, :, j) for j in 1:J]
+    pv          = [view(p, :, j) for j in 1:J]
+    p_nextv     = [view(p_next, :, j) for j in 1:J]
+    p_tmpv     = [view(p_tmp, :, j) for j in 1:J]
 
     XtX_qv      = [view(XtX_q, :, :, i) for i in 1:I]
     Xtz_qv      = [view(Xtz_q, :, i) for i in 1:I]
-    XtX_fv      = [view(XtX_f, :, :, j) for j in 1:J]
-    Xtz_fv      = [view(Xtz_f, :, j) for j in 1:J]
+    XtX_pv      = [view(XtX_p, :, :, j) for j in 1:J]
+    Xtz_pv      = [view(Xtz_p, :, j) for j in 1:J]
 
     # q, 
     # q_arr = unsafe_wrap(Array, pointer(q), size(q))
@@ -153,9 +165,9 @@ function AdmixData{T}(I, J, K, Q; skipmissing=true, rng=Random.GLOBAL_RNG) where
 
 
     # qf = rand(T, I, J);
-    maxL = tile_maxiter(typeof(Xtz_f))
-    qf_small = convert(Array{T}, rand(rng, maxL, maxL, NT))
-    qf_smallv = [view(qf_small, :, :, t) for t in 1:NT]
+    maxL = tile_maxiter(typeof(Xtz_p))
+    qp_small = convert(Array{T}, rand(rng, maxL, maxL, NT))
+    qp_smallv = [view(qp_small, :, :, t) for t in 1:NT]
     # qf_thin  = rand(T, I, maxL)
     # f_tmp = similar(f)
     # q_tmp = similar(q);
@@ -190,10 +202,10 @@ function AdmixData{T}(I, J, K, Q; skipmissing=true, rng=Random.GLOBAL_RNG) where
     AdmixData{T}(I, J, K, Q, skipmissing, x, x_next, x_next2, x_tmp, 
         x_flat, x_next_flat, x_next2_flat, x_tmp_flat,
         x_qq, x_rr,
-        q, q_next, q_next2, q_tmp, f, f_next, f_next2, f_tmp, 
-        XtX_q, Xtz_q, XtX_f, Xtz_f, 
-        qv, q_nextv, q_tmpv, fv, f_nextv, f_tmpv, XtX_qv, Xtz_qv, XtX_fv, Xtz_fv,
-        qf_small, qf_smallv, U, V, vt, 
+        q, q_next, q_next2, q_tmp, p, p_next, p_next2, p_tmp, 
+        XtX_q, Xtz_q, XtX_p, Xtz_p, 
+        qv, q_nextv, q_tmpv, pv, p_nextv, p_tmpv, XtX_qv, Xtz_qv, XtX_pv, Xtz_pv,
+        qp_small, qp_smallv, U, V, vt, 
         tmp_k, tmp_k1, tmp_k1_, tmp_k2, tmp_k2_, 
         tableau_k1, tableau_k2, swept,
         tmp_kv, tmp_k1v, tmp_k1_v, tmp_k2v, tmp_k2_v,

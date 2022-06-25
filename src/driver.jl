@@ -1,3 +1,32 @@
+"""
+    run_admixture(filename, K;
+        rng=Random.GLOBAL_RNG, 
+        sparsity=nothing,
+        prefix=filename[1:end-4],
+        skfr_tries = 1,
+        skfr_max_inner_iter = 50,
+        admix_n_iter = 1000,
+        admix_rtol=1e-7,
+        admix_n_em_iter = 5,
+        T = Float64, Q = 3, use_gpu=false)
+
+The main runner function for admixture. 
+
+# Input: 
+- `filename``: the PLINK BED file name to analyze, including the extension.
+- `K`: number of clusters.
+- `rng`: random number generator.
+- `sparsity`: number of AIMs to be utilized. `nothing` to not run the SKFR step.
+- `prefix`: prefix used for the output PLINK file if SKFR is used.
+- `skfr_tries`: number of repeats of SKFR with different initializations.
+- `skfr_max_inner_iter`: maximum number of iterations for each call for SKFR.
+- `admix_n_iter`: number of Admixture iterations
+- `admix_rtol`: relative tolerance for Admixture
+- `admix_n_em_iters`: number of iterations for EM initialization
+- `T`: Internal type for floating-point numbers
+- `Q`: number of steps used for quasi-Newton acceleration
+- `use_gpu`: whether to use GPU for computation
+"""
 function run_admixture(filename, K; 
     rng=Random.GLOBAL_RNG, 
     sparsity=nothing, 
@@ -6,7 +35,7 @@ function run_admixture(filename, K;
     skfr_max_inner_iter=50, 
     admix_n_iter=1000, 
     admix_rtol=1e-7, 
-    admix_em_iters = 5, 
+    admix_n_em_iters = 5, 
     T=Float64, 
     Q=3, 
     use_gpu=false)
@@ -19,11 +48,14 @@ function run_admixture(filename, K;
         clusters, aims = nothing, nothing
     end
     d = _admixture_base(admix_input, K; 
-        n_iter=admix_n_iter, rtol=admix_rtol, rng=rng, em_iters=admix_em_iters, 
+        n_iter=admix_n_iter, rtol=admix_rtol, rng=rng, em_iters=admix_n_em_iters, 
         T=T, Q=Q, use_gpu=use_gpu)
     d, clusters, aims
 end
 
+"""
+Run SKFR then filter the PLINK file to only keep AIMs.
+"""
 function _filter_SKFR(filename, K, sparsity::Integer; 
     rng=Random.GLOBAL_RNG,
     prefix=filename[1:end-4],
@@ -45,6 +77,9 @@ function _filter_SKFR(filename, K, sparsity::Integer;
     des * ".bed", clusters, aims
 end
 
+"""
+Run SKFR then filter the PLINK file to only keep AIMs. Run for multiple sparsities (in decreasing order)
+"""
 function _filter_SKFR(filename, K, sparsities::AbstractVector{<:Integer}; 
     rng=Random.GLOBAL_RNG,
     prefix=filename[1:end-4],

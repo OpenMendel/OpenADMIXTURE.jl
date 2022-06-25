@@ -2,13 +2,13 @@ struct CuAdmixData{T}
     # g::CuArray{UInt8, 2}
     q::CuArray{T, 2}
     q_next::CuArray{T, 2}
-    f::CuArray{T, 2}
-    f_next::CuArray{T, 2}
-    f_tmp::CuArray{T, 2}
+    p::CuArray{T, 2}
+    p_next::CuArray{T, 2}
+    p_tmp::CuArray{T, 2}
     XtX_q::CuArray{T, 3}
     Xtz_q::CuArray{T, 2}
-    XtX_f::CuArray{T, 3}
-    Xtz_f::CuArray{T, 2}
+    XtX_p::CuArray{T, 3}
+    Xtz_p::CuArray{T, 2}
 end
 function CuAdmixData(d::AdmixData{T}, g::SnpLinAlg{T}, width=d.J) where T
     I, J, K = d.I, d.J, d.K
@@ -20,12 +20,12 @@ function CuAdmixData(d::AdmixData{T}, g::SnpLinAlg{T}, width=d.J) where T
     # end
     q = CuArray{T, 2}(undef, K, I)
     q_next = similar(q)
-    f = CuArray{T, 2}(undef, K, J)
-    f_next = similar(f)
-    f_tmp  = similar(f)
+    p = CuArray{T, 2}(undef, K, J)
+    p_next = similar(p)
+    p_tmp  = similar(p)
     XtX_q = CuArray{T, 3}(undef, K, K, I)
     Xtz_q = CuArray{T, 2}(undef, K, I)
-    XtX_f = CuArray{T, 3}(undef, K, K, J)
-    Xtz_f = CuArray{T, 2}(undef, K, J)
-    CuAdmixData{T}(q, q_next, f, f_next, f_tmp, XtX_q, Xtz_q, XtX_f, Xtz_f)
+    XtX_p = CuArray{T, 3}(undef, K, K, J)
+    Xtz_p = CuArray{T, 2}(undef, K, J)
+    CuAdmixData{T}(q, q_next, p, p_next, p_tmp, XtX_q, Xtz_q, XtX_p, Xtz_p)
 end

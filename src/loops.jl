@@ -10,6 +10,9 @@ function tile_maxiter(::Type{<:AbstractArray{T}}) where {T}
 end
 tile_maxiter(::Type{AT}) where {AT} = TILE[] ÷ 8 # treat anything unkown like Float64
 
+"""
+Split the index space into two pieces.
+"""
 @inline function findcleft(r::UnitRange, step::Int)
     if length(r) >= 2*step
         minimum(r) - 1 + step * div(length(r), step * 2)
@@ -27,21 +30,45 @@ end
 @inline maybe32divsize(::Type{<:AbstractArray{T}}) where T<:Number = max(1, 32 ÷ sizeof(T))
 @inline maybe32divsize(::Type) = 4
 
+"""
+Split the index space into three.
+"""
 @inline function findthree(r::UnitRange)
     d = div(length(r), 3)
     i0 = first(r)
     (i0 : i0+d-1), (i0+d : i0+2d-1), (i0+2d : i0+length(r)-1)
 end
 
+"""
+    threader!(ftn!, ::Type{T}, arrs, irange, jrange, K, split_i; 
+    maxL=tile_maxiter(T), threads=nthreads())
+
+Apply `ftn!` over the index space `irange` x `jrange` of `arrs` with multiple threads.
+It splits the index space in one dimension over either i dimension or j dimension 
+in a single call. 
+It recursively calls `threader!()` without changing `split_i` or 
+calls `tiler!()` to eventually split in both directions.
+
+# Input
+- `ftn!`: The function to be applied
+- `T`: element type of updated `arrs`
+- `arrs`: a tuple of arrays to be updated
+- `irange`: an index range
+- `jrange`: another index range
+- `K`: number of clusters
+- `split_i`: if the dimension to split along is the "i" dimension. "j" dimension is split if `false`.
+- `maxL`: maximum length of tile.
+- `threads`: number of threads to be utilized 
+"""
 function threader!(ftn!::F, ::Type{T}, arrs::Tuple, irange, jrange, K, split_i::Bool; 
     maxL = tile_maxiter(T), threads=nthreads()) where {F <: Function, T}
     threads = min(threads, split_i ? length(irange) : length(jrange))
     # println("starting threader: $irange $jrange on $(threadid()), $threads threads")
-    if threads == 1 
+    if threads == 1 # single-thread
         # println("launch tiler: $irange $jrange on thread # $(threadid())")
         tiler!(ftn!, T, arrs, irange, jrange, K; maxL=maxL)
         return
-    elseif threads > 2 && threads % 3 == 0
+    elseif threads > 2 && threads % 3 == 0 # split into three pieces
         if split_i
             I1, I2, I3 = findthree(irange)
             task1 = Threads.@spawn begin
@@ -56,7 +83,7 @@ function threader!(ftn!::F, ::Type{T}, arrs::Tuple, irange, jrange, K, split_i::
             threader!(ftn!, T, arrs, I3, jrange, K, split_i; maxL=maxL, threads=threads÷3)
             wait(task1)
             wait(task2)
-        else
+        else # split j.
             J1, J2, J3 = findthree(jrange)
             task1 = Threads.@spawn begin
                 # println("threader: $irange $J1 on $(threadid())")
@@ -71,7 +98,7 @@ function threader!(ftn!::F, ::Type{T}, arrs::Tuple, irange, jrange, K, split_i::
             wait(task1)
             wait(task2)
         end
-    else
+    else # split into two pieces.
         if split_i
             I1, I2 = cleave(irange, maybe32divsize(T))
             task = Threads.@spawn begin
@@ -81,7 +108,7 @@ function threader!(ftn!::F, ::Type{T}, arrs::Tuple, irange, jrange, K, split_i::
             # println("threader: $I2 $jrange on $(threadid())")
             threader!(ftn!, T, arrs, I2, jrange, K, split_i; maxL=maxL, threads=threads÷2)
             wait(task)
-        else
+        else # split j.
             J1, J2 = cleave(jrange, maybe32divsize(T))
             task = Threads.@spawn begin
                 # println("threader: $irange $J1 on $(threadid())")
@@ -94,24 +121,56 @@ function threader!(ftn!::F, ::Type{T}, arrs::Tuple, irange, jrange, K, split_i::
     end
 end
 
+"""
+    tiler!(ftn!, ::Type{T}, arrs, irange, jrange, K; 
+    maxL=tile_maxiter(T), threads=nthreads())
+
+Apply `ftn!` over the index space `irange` x `jrange` of `arrs` with a single thread. 
+It splits the index space in two dimensions in small tiles. 
+
+# Input
+- `ftn!`: The function to be applied
+- `T`: element type of updated `arrs`
+- `arrs`: a tuple of arrays to be updated
+- `irange`: an index range
+- `jrange`: another index range
+- `K`: number of clusters
+- `maxL`: maximum length of tile.
+"""
 function tiler!(ftn!::F, ::Type{T}, arrs::Tuple, irange, jrange, K; maxL = tile_maxiter(T)) where {F <: Function, T}
     ilen, jlen = length(irange), length(jrange)
     maxL = tile_maxiter(T)
     if ilen > maxL || jlen > maxL
-        if ilen > jlen
+        if ilen > jlen # split i dimension
             I1s, I2s = cleave(irange, maybe32divsize(T))
             tiler!(ftn!, T, arrs, I1s, jrange, K; maxL=maxL)
             tiler!(ftn!, T, arrs, I2s, jrange, K; maxL=maxL)
-        else
+        else # split j dimension
             J1s, J2s = cleave(jrange, maybe32divsize(T))
             tiler!(ftn!, T, arrs, irange, J1s, K; maxL=maxL)
             tiler!(ftn!, T, arrs, irange, J2s, K; maxL=maxL)          
         end
-    else
+    else # base case.
         ftn!(arrs..., irange, jrange, K)
     end
 end
 
+"""
+    tiler_1d!(ftn!, ::Type{T}, arrs, irange, jrange, K; 
+    maxL=tile_maxiter(T), threads=nthreads())
+
+Apply `ftn!` over the index space `irange` x `jrange` of `arrs` with a single thread. 
+It splits the index space only in j dimension. 
+
+# Input
+- `ftn!`: The function to be applied
+- `T`: element type of updated `arrs`
+- `arrs`: a tuple of arrays to be updated
+- `irange`: an index range
+- `jrange`: another index range
+- `K`: number of clusters
+- `maxL`: maximum length of tile.
+"""
 function tiler_1d!(ftn!::F, ::Type{T}, arrs::Tuple, irange, jrange, K; maxL = tile_maxiter(T)) where {F <: Function, T}
     ilen, jlen = length(irange), length(jrange)
     maxL = tile_maxiter(T)
@@ -124,7 +183,24 @@ function tiler_1d!(ftn!::F, ::Type{T}, arrs::Tuple, irange, jrange, K; maxL = ti
     end
 end
 
-function tiler_scalar(ftn::F, ::Type{T}, z::RT, arrs::Tuple, irange, jrange, K) where {F <: Function, T, RT}
+"""
+    tiler_scalar(ftn, ::Type{T}, z::RT, arrs, irange, jrange, K; 
+    maxL=tile_maxiter(T))
+
+Apply a reduction `ftn` over the index space `irange` x `jrange` of `arrs` with a single thread. 
+It splits the index space both dimensions.
+
+# Input
+- `ftn`: The function to be applied
+- `T`: element type of updated `arrs`
+- `z`: the "zero" value for the return. 
+- `arrs`: a tuple of input arrays
+- `irange`: an index range
+- `jrange`: another index range
+- `K`: number of clusters
+- `maxL`: maximum length of tile.
+"""
+function tiler_scalar(ftn::F, ::Type{T}, z::RT, arrs::Tuple, irange, jrange, K; maxL=tile_maxiter(T)) where {F <: Function, T, RT}
     ilen, jlen = length(irange), length(jrange)
     maxL = tile_maxiter(T)
     r = z
@@ -144,7 +220,24 @@ function tiler_scalar(ftn::F, ::Type{T}, z::RT, arrs::Tuple, irange, jrange, K) 
     end
 end
 
-function tiler_scalar_1d(ftn::F, ::Type{T}, z::RT, arrs::Tuple, irange, jrange, K) where {F <: Function, T, RT}
+"""
+    tiler_scalar_1d(ftn, ::Type{T}, z::RT, arrs, irange, jrange, K; 
+    maxL=tile_maxiter(T))
+
+Apply a reduction `ftn` over the index space `irange` x `jrange` of `arrs` with a single thread. 
+It splits the index space only in j dimensions.
+
+# Input
+- `ftn`: The function to be applied
+- `T`: element type of updated `arrs`
+- `z`: the "zero" value for the return. 
+- `arrs`: a tuple of input arrays
+- `irange`: an index range
+- `jrange`: another index range
+- `K`: number of clusters
+- `maxL`: maximum length of tile.
+"""
+function tiler_scalar_1d(ftn::F, ::Type{T}, z::RT, arrs::Tuple, irange, jrange, K; maxL=tile_maxiter(T)) where {F <: Function, T, RT}
     ilen, jlen = length(irange), length(jrange)
     maxL = tile_maxiter(T)
     r = z
@@ -158,55 +251,81 @@ function tiler_scalar_1d(ftn::F, ::Type{T}, z::RT, arrs::Tuple, irange, jrange, 
     end
 end
 
-# """
-#     qf!(qf, q, f)
-# Computes q * f, in-place.
-# """
-# function qf!(qf, q, f)
-#     @tullio qf[i, j] = q[k, i] * f[k, j]
-# end
+"""
+    qp_block!(qp_small, q, p, irange, jrange, K)
+Compute a block of the matrix Q x P.
 
-@inline function qf_block!(qf_small::AbstractArray{T}, q, f, irange, jrange, K) where T
+# Input
+- `qp_small`: the output.
+- `q`: Q matrix.
+- `p`: P matrix.
+- `irange`: i index range over which this function is applied
+- `jrange`: j index range over which this function is applied
+- `K`: number of clusters
+"""
+@inline function qp_block!(qp_small::AbstractArray{T}, q, p, irange, jrange, K) where T
     tid = threadid()
-    fill!(view(qf_small, :, :, tid), zero(T))
+    fill!(view(qp_small, :, :, tid), zero(T))
     firsti, firstj = first(irange), first(jrange)
     @turbo for j in jrange
         for i in irange
             for k in 1:K
-                qf_small[i-firsti+1, j-firstj+1, tid] += q[k, i] * f[k, j]
+                qp_small[i-firsti+1, j-firstj+1, tid] += q[k, i] * p[k, j]
             end
         end
     end  
 end
 
-@inline function loglikelihood_loop(g::AbstractArray{T}, qf, irange, jrange, K) where T
+"""
+    loglikelihood_loop(g, qp, irange, jrange, K)
+Compute loglikelihood using `qp`. Always returns the double precision result.
+
+# Input
+- `g`: genotype matrix.
+- `qp`: QP matrix.
+- `irange`: i index range over which this function is applied
+- `jrange`: j index range over which this function is applied
+- `K`: number of clusters
+"""
+@inline function loglikelihood_loop(g::AbstractArray{T}, qp, irange, jrange, K) where T
     oneT = one(T)
     twoT = 2one(T)
     r = zero(Float64)
     @turbo for j in jrange
         for i in irange
             gij = g[i, j]
-            r += (gij * log(qf[i, j]) + (twoT - gij) * log(oneT - qf[i, j]))
+            r += (gij * log(qp[i, j]) + (twoT - gij) * log(oneT - qp[i, j]))
         end
     end
     r
 end
 
-@inline function loglikelihood_loop_skipmissing(g::AbstractArray{T}, qf, irange, jrange, K) where T
+"""
+    loglikelihood_loop_skipmissing(g, qp, irange, jrange, K)
+Compute loglikelihood using `qp`. Always returns the double precision result.
+
+# Input
+- `g`: genotype matrix.
+- `qp`: QP matrix.
+- `irange`: i index range over which this function is applied
+- `jrange`: j index range over which this function is applied
+- `K`: number of clusters
+"""
+@inline function loglikelihood_loop_skipmissing(g::AbstractArray{T}, qp, irange, jrange, K) where T
     oneT = one(T)
     twoT = 2one(T)
     r = zero(Float64)
     @turbo for j in jrange
         for i in irange
             gij = g[i, j]
-            r += gij != gij ? zero(T) : (gij * log(qf[i, j]) + (twoT - gij) * log(oneT - qf[i, j]))
+            r += gij != gij ? zero(T) : (gij * log(qp[i, j]) + (twoT - gij) * log(oneT - qp[i, j]))
         end
     end
     # @tullio r = g[i, j] * log(qf[i, j]) + (2 - g[i, j]) * log(1 - qf[i, j])
     r
 end
 
-@inline function loglikelihood_loop(g::SnpLinAlg{T}, qf, irange, jrange, K) where T
+@inline function loglikelihood_loop(g::SnpLinAlg{T}, qp, irange, jrange, K) where T
     oneT = one(T)
     twoT = 2one(T)
     rslt = zero(Float64)
@@ -219,14 +338,14 @@ end
             blk_shifted  = blk >> (r << 1)
             gij_pre = blk_shifted & 0x03
             gij = g_map[gij_pre + 0x01] + (gij_pre == 0x01) * g.μ[j]
-            rslt += (gij * log(qf[i, j]) + (twoT - gij) * log(oneT - qf[i, j]))
+            rslt += (gij * log(qp[i, j]) + (twoT - gij) * log(oneT - qp[i, j]))
         end
     end
     # @tullio r = g[i, j] * log(qf[i, j]) + (2 - g[i, j]) * log(1 - qf[i, j])
     rslt
 end
 
-@inline function loglikelihood_loop_skipmissing(g::SnpLinAlg{T}, qf, irange, jrange, K) where T
+@inline function loglikelihood_loop_skipmissing(g::SnpLinAlg{T}, qp, irange, jrange, K) where T
     oneT = one(T)
     twoT = 2one(T)
     rslt = zero(Float64)
@@ -248,7 +367,21 @@ end
     rslt
 end
 
-@inline function loglikelihood_loop(g::AbstractArray{T}, q, f, qf_small::AbstractArray{T}, irange, jrange, K) where T
+"""
+    loglikelihood_loop(g, q, p, qp_small, irange, jrange, K)
+Compute loglikelihood using `q` and `p`, compute local `qp` on-the-fly. 
+Always returns the double precision result.
+
+# Input
+- `g`: genotype matrix.
+- `q`: Q matrix.
+- `p`: P matrix.
+- `qp_small`: dummy. 
+- `irange`: i index range over which this function is applied
+- `jrange`: j index range over which this function is applied
+- `K`: number of clusters
+"""
+@inline function loglikelihood_loop(g::AbstractArray{T}, q, p, qp_small::AbstractArray{T}, irange, jrange, K) where T
     oneT = one(T)
     twoT = 2one(T)
     firsti, firstj = first(irange), first(jrange)
@@ -256,27 +389,41 @@ end
     @turbo for j in jrange
         for i in irange
             gij = g[i, j]
-            qf_local = zero(T)
+            qp_local = zero(T)
             for k in 1:K
-                qf_local += q[k, i] * f[k, j]
+                qp_local += q[k, i] * p[k, j]
             end
-            r += gij * log(qf_local)
+            r += gij * log(qp_local)
         end
     end
     @turbo for j in jrange
         for i in irange
             gij = g[i, j]
-            qf_local = zero(T)
+            qp_local = zero(T)
             for k in 1:K
-                qf_local += q[k, i] * f[k, j]
+                qp_local += q[k, i] * p[k, j]
             end
-            r += (twoT - gij) * log(oneT - qf_local)
+            r += (twoT - gij) * log(oneT - qp_local)
         end
     end
     r
 end
 
-@inline function loglikelihood_loop_skipmissing(g::AbstractArray{T}, q, f, qf_small::AbstractArray{T}, irange, jrange, K) where T
+"""
+    loglikelihood_loop_skipmissing(g, q, p, qp_small, irange, jrange, K)
+Compute loglikelihood using `q` and `p`, compute local `qp` on-the-fly. 
+Always returns the double precision result.
+
+# Input
+- `g`: genotype matrix.
+- `q`: Q matrix.
+- `p`: P matrix.
+- `qp_small`: dummy. 
+- `irange`: i index range over which this function is applied
+- `jrange`: j index range over which this function is applied
+- `K`: number of clusters
+"""
+@inline function loglikelihood_loop_skipmissing(g::AbstractArray{T}, q, p, qp_small::AbstractArray{T}, irange, jrange, K) where T
     oneT = one(T)
     twoT = 2one(T)
     # firsti, firstj = first(irange), first(jrange)
@@ -285,33 +432,33 @@ end
         for i in irange
             gij = g[i, j]
             nonmissing = (gij == gij)
-            qf_local = zero(T)
+            qp_local = zero(T)
             for k in 1:K
-                qf_local += q[k, i] * f[k, j]
+                qp_local += q[k, i] * p[k, j]
             end
-            r += nonmissing ? gij * log(qf_local) : zero(T)
+            r += nonmissing ? gij * log(qp_local) : zero(T)
         end
     end
     @turbo for j in jrange
         for i in irange
             gij = g[i, j]
             nonmissing = (gij == gij)
-            qf_local = zero(T)
+            qp_small = zero(T)
             for k in 1:K
-                qf_local += q[k, i] * f[k, j]
+                qp_small += q[k, i] * p[k, j]
             end
-            r += nonmissing ? (twoT - gij) * log(oneT - qf_local) : zero(T)
+            r += nonmissing ? (twoT - gij) * log(oneT - qp_small) : zero(T)
         end
     end
     r
 end
 
-@inline function loglikelihood_loop(g::SnpLinAlg{T}, q, f, qf_small::AbstractArray{T}, irange, jrange, K) where T
+@inline function loglikelihood_loop(g::SnpLinAlg{T}, q, p, qp_small::AbstractArray{T}, irange, jrange, K) where T
     oneT = one(T)
     twoT = 2one(T)
     firsti, firstj = first(irange), first(jrange)
     tid = threadid()
-    qf_block!(qf_small, q, f, irange, jrange, K)
+    qp_block!(qp_small, q, p, irange, jrange, K)
     r = zero(Float64)
     gmat = g.s.data
     g_map = T == Float64 ? g_map_Float64 : g_map_Float32
@@ -322,7 +469,7 @@ end
             blk_shifted  = blk >> (re << 1)
             gij_pre = blk_shifted & 0x03
             gij = g_map[gij_pre + 0x01] + (gij_pre == 0x01) * g.μ[j]
-            r +=  (gij * log(qf_small[i-firsti+1, j-firstj+1, tid])) + ((twoT - gij) * log(oneT - qf_small[i-firsti+1, j-firstj+1, tid]))
+            r +=  (gij * log(qp_small[i-firsti+1, j-firstj+1, tid])) + ((twoT - gij) * log(oneT - qp_small[i-firsti+1, j-firstj+1, tid]))
             
         end
     end
@@ -330,12 +477,12 @@ end
 end
 
 
-@inline function loglikelihood_loop_skipmissing(g::SnpLinAlg{T}, q, f, qf_small::AbstractArray{T}, irange, jrange, K) where T
+@inline function loglikelihood_loop_skipmissing(g::SnpLinAlg{T}, q, p, qp_small::AbstractArray{T}, irange, jrange, K) where T
     oneT = one(T)
     twoT = 2one(T)
     firsti, firstj = first(irange), first(jrange)
     tid = threadid()
-    qf_block!(qf_small, q, f, irange, jrange, K)
+    qp_block!(qp_small, q, p, irange, jrange, K)
     r = zero(Float64)
     gmat = g.s.data
     g_map = T == Float64 ? g_map_Float64 : g_map_Float32
@@ -348,50 +495,64 @@ end
             gij_pre = blk_shifted & 0x03
             gij = g_map[gij_pre + 0x01]
             nonmissing = nonmissing_map[gij_pre + 0x01]
-            r += nonmissing * ((gij * log(qf_small[i-firsti+1, j-firstj+1, tid])) + ((twoT - gij) * log(oneT - qf_small[i-firsti+1, j-firstj+1, tid])))
+            r += nonmissing * ((gij * log(qp_small[i-firsti+1, j-firstj+1, tid])) + ((twoT - gij) * log(oneT - qp_small[i-firsti+1, j-firstj+1, tid])))
         end
     end
     r
 end
 
-@inline function em_q_loop!(q_next, g::AbstractArray{T}, q, f, qf_small::AbstractArray{T}, 
+@inline function em_q_loop!(q_next, g::AbstractArray{T}, q, p, qp_small::AbstractArray{T}, 
     irange, jrange, K) where T
     firsti, firstj = first(irange), first(jrange)
     tid = threadid()
-    qf_block!(qf_small, q, f, irange, jrange, K)
+    qp_block!(qp_small, q, p, irange, jrange, K)
     @turbo for j in jrange
         for i in irange
             for k in 1:K
                 gij = g[i, j]
-                q_next[k, i] += (gij * q[k, i] * f[k, j] / qf_small[i-firsti+1, j-firstj+1, tid] + 
-                    (2 - gij) * q[k, i] * (1 - f[k, j]) / (1 - qf_small[i-firsti+1, j-firstj+1, tid]))
+                q_next[k, i] += (gij * q[k, i] * p[k, j] / qp_small[i-firsti+1, j-firstj+1, tid] + 
+                    (2 - gij) * q[k, i] * (1 - p[k, j]) / (1 - qp_small[i-firsti+1, j-firstj+1, tid]))
             end
         end
     end
 end
 
-@inline function em_q_loop_skipmissing!(q_next, g::AbstractArray{T}, q, f, qf_small::AbstractArray{T}, 
+"""
+    em_q_loop_skipmissing!(q_next, g, q, p, qp_small, irange, jrange, K)
+Compute EM update for `q`, compute local `qp` on-the-fly.
+
+# Input
+- `q_next`: result to be updated inplace.
+- `g`: genotype matrix.
+- `q`: Q matrix.
+- `p`: P matrix.
+- `qp_small`: dummy. 
+- `irange`: i index range over which this function is applied
+- `jrange`: j index range over which this function is applied
+- `K`: number of clusters
+"""
+@inline function em_q_loop_skipmissing!(q_next, g::AbstractArray{T}, q, p, qp_small::AbstractArray{T}, 
     irange, jrange, K) where T
     firsti, firstj = first(irange), first(jrange)
     tid = threadid()
-    qf_block!(qf_small, q, f, irange, jrange, K)
+    qp_block!(qp_small, q, p, irange, jrange, K)
     @turbo for j in jrange
         for i in irange
             for k in 1:K
                 gij = g[i, j]
                 nonmissing = (gij == gij)
-                tmp = (gij * q[k, i] * f[k, j] / qf_small[i-firsti+1, j-firstj+1, tid] + 
-                    (2 - gij) * q[k, i] * (1 - f[k, j]) / (1 - qf_small[i-firsti+1, j-firstj+1, tid]))
+                tmp = (gij * q[k, i] * p[k, j] / qp_small[i-firsti+1, j-firstj+1, tid] + 
+                    (2 - gij) * q[k, i] * (1 - p[k, j]) / (1 - qp_small[i-firsti+1, j-firstj+1, tid]))
                 q_next[k, i] += nonmissing ? tmp : zero(T)
             end
         end
     end
 end
 
-@inline function em_q_loop!(q_next, g::SnpLinAlg{T}, q, f, qf_small, irange, jrange, K) where T
+@inline function em_q_loop!(q_next, g::SnpLinAlg{T}, q, p, qp_small, irange, jrange, K) where T
     firsti, firstj = first(irange), first(jrange)
     tid = threadid()
-    qf_block!(qf_small, q, f, irange, jrange, K)
+    qp_block!(qp_small, q, p, irange, jrange, K)
     gmat = g.s.data
     g_map = T == Float64 ? g_map_Float64 : g_map_Float32
     @turbo for j in jrange
@@ -402,17 +563,17 @@ end
                 blk_shifted  = blk >> (re << 1)
                 gij_pre = blk_shifted & 0x03
                 gij = g_map[gij_pre + 0x01] + (gij_pre == 0x01) * g.μ[j]
-                q_next[k, i] += (gij * q[k, i] * f[k, j] / qf_small[i-firsti+1, j-firstj+1, tid] + 
-                    (2 - gij) * q[k, i] * (1 - f[k, j]) / (1 - qf_small[i-firsti+1, j-firstj+1, tid]))
+                q_next[k, i] += (gij * q[k, i] * p[k, j] / qp_small[i-firsti+1, j-firstj+1, tid] + 
+                    (2 - gij) * q[k, i] * (1 - p[k, j]) / (1 - qp_small[i-firsti+1, j-firstj+1, tid]))
             end
         end
     end
 end
 
-@inline function em_q_loop_skipmissing!(q_next, g::SnpLinAlg{T}, q, f, qf_small::AbstractArray{T}, irange, jrange, K) where T
+@inline function em_q_loop_skipmissing!(q_next, g::SnpLinAlg{T}, q, p, qp_small::AbstractArray{T}, irange, jrange, K) where T
     firsti, firstj = first(irange), first(jrange)
     tid = threadid()
-    qf_block!(qf_small, q, f, irange, jrange, K)
+    qp_block!(qp_small, q, p, irange, jrange, K)
     gmat = g.s.data
     g_map = T == Float64 ? g_map_Float64 : g_map_Float32
     nonmissing_map = T == Float64 ? nonmissing_map_Float64 : nonmissing_map_Float32
@@ -425,49 +586,63 @@ end
                 gij_pre = blk_shifted & 0x03
                 gij = g_map[gij_pre + 0x01]
                 nonmissing = nonmissing_map[gij_pre + 0x01]
-                tmp = (gij * q[k, i] * f[k, j] / qf_small[i-firsti+1, j-firstj+1, tid] + 
-                    (2 - gij) * q[k, i] * (1 - f[k, j]) / (1 - qf_small[i-firsti+1, j-firstj+1, tid]))
+                tmp = (gij * q[k, i] * p[k, j] / qp_small[i-firsti+1, j-firstj+1, tid] + 
+                    (2 - gij) * q[k, i] * (1 - p[k, j]) / (1 - qp_small[i-firsti+1, j-firstj+1, tid]))
                 q_next[k, i] += nonmissing * tmp
             end
         end
     end
 end
 
-@inline function em_f_loop!(f_next, g::AbstractArray{T}, q, f, f_tmp, qf_small::AbstractArray{T}, irange, jrange, K) where T
+@inline function em_p_loop!(f_next, g::AbstractArray{T}, q, p, p_tmp, qp_small::AbstractArray{T}, irange, jrange, K) where T
     firsti, firstj = first(irange), first(jrange)
     tid = threadid()
-    qf_block!(qf_small, q, f, irange, jrange, K)
+    qp_block!(qp_small, q, p, irange, jrange, K)
     @turbo for j in jrange
         for i in irange
             gij = g[i, j]
             for k in 1:K
-                f_tmp[k, j] += gij * q[k, i] * f[k, j] / qf_small[i-firsti+1, j-firstj+1, tid]
-                f_next[k, j] += (2 - gij) * q[k, i] * (one(T) - f[k, j]) / (one(T) - qf_small[i-firsti+1, j-firstj+1, tid])
+                p_tmp[k, j] += gij * q[k, i] * p[k, j] / qp_small[i-firsti+1, j-firstj+1, tid]
+                f_next[k, j] += (2 - gij) * q[k, i] * (one(T) - p[k, j]) / (one(T) - qp_small[i-firsti+1, j-firstj+1, tid])
             end
         end
     end
 end
 
-@inline function em_f_loop_skipmissing!(f_next, g::AbstractArray{T}, q, f, f_tmp, qf_small::AbstractArray{T}, irange, jrange, K) where T
+"""
+    em_p_loop_skipmissing!(p_next, g, q, p, qp_small, irange, jrange, K)
+Compute EM update for `p`, compute local `qp` on-the-fly.
+
+# Input
+- `p_next`: result to be updated inplace
+- `g`: genotype matrix.
+- `q`: Q matrix.
+- `p`: P matrix.
+- `qp_small`: dummy. 
+- `irange`: i index range over which this function is applied
+- `jrange`: j index range over which this function is applied
+- `K`: number of clusters
+"""
+@inline function em_p_loop_skipmissing!(p_next, g::AbstractArray{T}, q, p, p_tmp, qp_small::AbstractArray{T}, irange, jrange, K) where T
     firsti, firstj = first(irange), first(jrange)
     tid = threadid()
-    qf_block!(qf_small, q, f, irange, jrange, K)
+    qp_block!(qp_small, q, p, irange, jrange, K)
     @turbo for j in jrange
         for i in irange
             gij = g[i, j]
             nonmissing = (gij == gij)
             for k in 1:K
-                f_tmp[k, j] += nonmissing ? (gij * q[k, i] * f[k, j] / qf_small[i-firsti+1, j-firstj+1, tid]) : zero(T)
-                f_next[k, j] += nonmissing ? ((2 - gij) * q[k, i] * (one(T) - f[k, j]) / (one(T) - qf_small[i-firsti+1, j-firstj+1, tid])) : zero(T)
+                p_tmp[k, j] += nonmissing ? (gij * q[k, i] * p[k, j] / qp_small[i-firsti+1, j-firstj+1, tid]) : zero(T)
+                p_next[k, j] += nonmissing ? ((2 - gij) * q[k, i] * (one(T) - p[k, j]) / (one(T) - qp_small[i-firsti+1, j-firstj+1, tid])) : zero(T)
             end
         end
     end
 end
 
-@inline function em_f_loop!(f_next, g::SnpLinAlg{T}, q, f, f_tmp, qf_small::AbstractArray{T}, irange, jrange, K) where T
+@inline function em_p_loop!(p_next, g::SnpLinAlg{T}, q, p, p_tmp, qp_small::AbstractArray{T}, irange, jrange, K) where T
     firsti, firstj = first(irange), first(jrange)
     tid = threadid()
-    qf_block!(qf_small, q, f, irange, jrange, K)
+    qp_block!(qp_small, q, p, irange, jrange, K)
     gmat = g.s.data
     g_map = T == Float64 ? g_map_Float64 : g_map_Float32
     @turbo for j in jrange
@@ -478,17 +653,17 @@ end
             gij_pre = blk_shifted & 0x03
             gij = g_map[gij_pre + 0x01] + (gij_pre == 0x01) * g.μ[j]
             for k in 1:K
-                f_tmp[k, j] += gij * q[k, i] * f[k, j] / qf_small[i-firsti+1, j-firstj+1, tid]
-                f_next[k, j] += (2 - gij) * q[k, i] * (one(T) - f[k, j]) / (one(T) - qf_small[i-firsti+1, j-firstj+1, tid])
+                p_tmp[k, j] += gij * q[k, i] * p[k, j] / qp_small[i-firsti+1, j-firstj+1, tid]
+                p_next[k, j] += (2 - gij) * q[k, i] * (one(T) - p[k, j]) / (one(T) - qp_small[i-firsti+1, j-firstj+1, tid])
             end
         end
     end
 end
 
-@inline function em_f_loop_skipmissing!(f_next, g::SnpLinAlg{T}, q, f, f_tmp, qf_small::AbstractArray{T}, irange, jrange, K) where T
+@inline function em_p_loop_skipmissing!(f_next, g::SnpLinAlg{T}, q, p, p_tmp, qp_small::AbstractArray{T}, irange, jrange, K) where T
     firsti, firstj = first(irange), first(jrange)
     tid = threadid()
-    qf_block!(qf_small, q, f, irange, jrange, K)
+    qp_block!(qp_small, q, p, irange, jrange, K)
     gmat = g.s.data
     g_map = T == Float64 ? g_map_Float64 : g_map_Float32
     nonmissing_map = T == Float64 ? nonmissing_map_Float64 : nonmissing_map_Float32
@@ -501,106 +676,137 @@ end
             gij = g_map[gij_pre + 0x01]
             nonmissing = nonmissing_map[gij_pre + 0x01]
             for k in 1:K
-                f_tmp[k, j] += nonmissing * (gij * q[k, i] * f[k, j] / qf_small[i-firsti+1, j-firstj+1, tid])
-                f_next[k, j] += nonmissing * ((2 - gij) * q[k, i] * (one(T) - f[k, j]) / (one(T) - qf_small[i-firsti+1, j-firstj+1, tid]))
+                p_tmp[k, j] += nonmissing * (gij * q[k, i] * p[k, j] / qp_small[i-firsti+1, j-firstj+1, tid])
+                f_next[k, j] += nonmissing * ((2 - gij) * q[k, i] * (one(T) - p[k, j]) / (one(T) - qp_small[i-firsti+1, j-firstj+1, tid]))
             end
         end
     end
 end
 
-@inline function update_q_loop!(XtX, Xtz, g::AbstractArray{T}, q, f, qf_small::AbstractArray{T}, irange, jrange, K) where T
+
+@inline function update_q_loop!(XtX, Xtz, g::AbstractArray{T}, q, p, qp_small::AbstractArray{T}, irange, jrange, K) where T
     oneT = one(T)
     twoT = 2one(T)
     firsti, firstj = first(irange), first(jrange)
     tid = threadid()
-    qf_block!(qf_small, q, f, irange, jrange, K)
+    qp_block!(qp_small, q, p, irange, jrange, K)
     @turbo for j in jrange
         for i in irange
             gij = g[i, j]
             for k in 1:K
-                Xtz[k, i] += gij * f[k, j] / qf_small[i-firsti+1, j-firstj+1, tid] + 
-                    (twoT - gij) * (oneT - f[k, j]) / (oneT - qf_small[i-firsti+1, j-firstj+1, tid])
+                Xtz[k, i] += gij * p[k, j] / qp_small[i-firsti+1, j-firstj+1, tid] + 
+                    (twoT - gij) * (oneT - p[k, j]) / (oneT - qp_small[i-firsti+1, j-firstj+1, tid])
                 for k2 in 1:K
-                    XtX[k2, k, i] +=  gij / (qf_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * f[k, j] * f[k2, j] + 
-                        (twoT - gij) / (oneT - qf_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * (oneT - f[k, j]) * (oneT - f[k2, j])
+                    XtX[k2, k, i] +=  gij / (qp_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * p[k, j] * p[k2, j] + 
+                        (twoT - gij) / (oneT - qp_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * (oneT - p[k, j]) * (oneT - p[k2, j])
                 end
             end
         end
     end
 end
 
-@inline function update_q_loop_skipmissing!(XtX, Xtz, g::AbstractArray{T}, q, f, qf_small::AbstractArray{T}, irange, jrange, K) where T
+"""
+    update_q_loop_skipmissing!(XtX, Xtz, g, q, p, qp_small, irange, jrange, K)
+Compute gradient and hessian of loglikelihood w.r.t. `q`, compute local `qp` on-the-fly.
+
+# Arguments
+- `XtX`: Hessian of loglikelihood computed inplace
+- `Xtz`: Gradient of loglikelihood computed inplace
+- `g`: genotype matrix.
+- `q`: Q matrix.
+- `p`: P matrix.
+- `qp_small`: dummy. 
+- `irange`: i index range over which this function is applied
+- `jrange`: j index range over which this function is applied
+- `K`: number of clusters
+"""
+@inline function update_q_loop_skipmissing!(XtX, Xtz, g::AbstractArray{T}, q, p, qp_small::AbstractArray{T}, irange, jrange, K) where T
     oneT = one(T)
     twoT = 2one(T)
     firsti, firstj = first(irange), first(jrange)
     tid = threadid()
-    qf_block!(qf_small, q, f, irange, jrange, K)
+    qp_block!(qp_small, q, p, irange, jrange, K)
     @turbo for j in jrange
         for i in irange
             gij = g[i, j]
             nonmissing = (gij == gij)
             for k in 1:K
-                Xtz[k, i] += nonmissing ? (gij * f[k, j] / qf_small[i-firsti+1, j-firstj+1, tid] + 
-                    (twoT - gij) * (oneT - f[k, j]) / (oneT - qf_small[i-firsti+1, j-firstj+1, tid])) : zero(T)
+                Xtz[k, i] += nonmissing ? (gij * p[k, j] / qp_small[i-firsti+1, j-firstj+1, tid] + 
+                    (twoT - gij) * (oneT - p[k, j]) / (oneT - qp_small[i-firsti+1, j-firstj+1, tid])) : zero(T)
                 for k2 in 1:K
-                    XtX[k2, k, i] += nonmissing ? (gij / (qf_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * f[k, j] * f[k2, j] + 
-                        (twoT - gij) / (oneT - qf_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * (oneT - f[k, j]) * (oneT - f[k2, j])) : zero(T)
+                    XtX[k2, k, i] += nonmissing ? (gij / (qp_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * p[k, j] * p[k2, j] + 
+                        (twoT - gij) / (oneT - qp_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * (oneT - p[k, j]) * (oneT - p[k2, j])) : zero(T)
                 end
             end
         end
     end
 end
 
-@inline function update_f_loop!(XtX, Xtz, g::AbstractArray{T}, q, f, qf_small::AbstractArray{T}, irange, jrange, K) where T
+@inline function update_p_loop!(XtX, Xtz, g::AbstractArray{T}, q, p, qp_small::AbstractArray{T}, irange, jrange, K) where T
     oneT = one(T)
     twoT = 2one(T)
     firsti, firstj = first(irange), first(jrange)
     tid = threadid()
-    qf_block!(qf_small, q, f, irange, jrange, K)
+    qp_block!(qp_small, q, p, irange, jrange, K)
     @turbo for j in jrange
         for i in irange
             gij = g[i, j]
             for k in 1:K
-                Xtz[k, j] += gij * q[k, i] / qf_small[i-firsti+1, j-firstj+1, tid] - 
-                        (twoT - gij) * q[k, i] / (oneT - qf_small[i-firsti+1, j-firstj+1, tid])
+                Xtz[k, j] += gij * q[k, i] / qp_small[i-firsti+1, j-firstj+1, tid] - 
+                        (twoT - gij) * q[k, i] / (oneT - qp_small[i-firsti+1, j-firstj+1, tid])
                 for k2 in 1:K
-                    XtX[k2, k, j] += gij / (qf_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * q[k, i] * q[k2, i] + 
-                        (twoT - gij) / (oneT - qf_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * q[k, i] * q[k2, i]
+                    XtX[k2, k, j] += gij / (qp_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * q[k, i] * q[k2, i] + 
+                        (twoT - gij) / (oneT - qp_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * q[k, i] * q[k2, i]
                 end
             end
         end
     end
 end
 
-@inline function update_f_loop_skipmissing!(XtX, Xtz, g::AbstractArray{T}, q, f, qf_small::AbstractArray{T}, irange, jrange, K) where T
+"""
+    update_p_loop_skipmissing!(XtX, Xtz, g, q, p, qp_small, irange, jrange, K)
+Compute gradient and hessian of loglikelihood w.r.t. `p`, compute local `qp` on-the-fly.
+
+# Arguments
+- `XtX`: Hessian of loglikelihood computed inplace
+- `Xtz`: Gradient of loglikelihood computed inplace
+- `g`: genotype matrix.
+- `q`: Q matrix.
+- `p`: P matrix.
+- `qp_small`: dummy. 
+- `irange`: i index range over which this function is applied
+- `jrange`: j index range over which this function is applied
+- `K`: number of clusters
+"""
+@inline function update_p_loop_skipmissing!(XtX, Xtz, g::AbstractArray{T}, q, p, qp_small::AbstractArray{T}, irange, jrange, K) where T
     oneT = one(T)
     twoT = 2one(T)
     firsti, firstj = first(irange), first(jrange)
     tid = threadid()
-    qf_block!(qf_small, q, f, irange, jrange, K)
+    qp_block!(qp_small, q, p, irange, jrange, K)
     @turbo for j in jrange
         for i in irange
             gij = g[i, j]
             nonmissing =  (gij == gij)
             for k in 1:K
-                Xtz[k, j] += nonmissing ? (gij * q[k, i] / qf_small[i-firsti+1, j-firstj+1, tid] - 
-                        (twoT - gij) * q[k, i] / (oneT - qf_small[i-firsti+1, j-firstj+1, tid])) : zero(T)
+                Xtz[k, j] += nonmissing ? (gij * q[k, i] / qp_small[i-firsti+1, j-firstj+1, tid] - 
+                        (twoT - gij) * q[k, i] / (oneT - qp_small[i-firsti+1, j-firstj+1, tid])) : zero(T)
                 for k2 in 1:K
-                    XtX[k2, k, j] += nonmissing ? (gij / (qf_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * q[k, i] * q[k2, i] + 
-                        (twoT - gij) / (oneT - qf_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * q[k, i] * q[k2, i]) : zero(T)
+                    XtX[k2, k, j] += nonmissing ? (gij / (qp_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * q[k, i] * q[k2, i] + 
+                        (twoT - gij) / (oneT - qp_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * q[k, i] * q[k2, i]) : zero(T)
                 end
             end
         end
     end
 end
 
-@inline function update_q_loop!(XtX, Xtz, g::SnpLinAlg{T}, q, f, qf_small::AbstractArray{T}, irange, jrange, K) where T
+@inline function update_q_loop!(XtX, Xtz, g::SnpLinAlg{T}, q, p, qp_small::AbstractArray{T}, irange, jrange, K) where T
     oneT = one(T)
     twoT = 2one(T)
     gmat = g.s.data
     firsti, firstj = first(irange), first(jrange)
     tid = threadid()
-    qf_block!(qf_small, q, f, irange, jrange, K)
+    qp_block!(qp_small, q, p, irange, jrange, K)
     g_map = T == Float64 ? g_map_Float64 : g_map_Float32
     @turbo for j in jrange
         for i in irange
@@ -610,24 +816,24 @@ end
             gij_pre = blk_shifted & 0x03
             gij = g_map[gij_pre + 0x01] + (gij_pre == 0x01) * g.μ[j]
             for k in 1:K
-                Xtz[k, i] += (gij * f[k, j] / qf_small[i-firsti+1, j-firstj+1, tid] + 
-                    (twoT - gij) * (oneT - f[k, j]) / (oneT - qf_small[i-firsti+1, j-firstj+1, tid]))
+                Xtz[k, i] += (gij * p[k, j] / qp_small[i-firsti+1, j-firstj+1, tid] + 
+                    (twoT - gij) * (oneT - p[k, j]) / (oneT - qp_small[i-firsti+1, j-firstj+1, tid]))
                 for k2 in 1:K
-                    XtX[k2, k, i] +=  (gij / (qf_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * f[k, j] * f[k2, j] + 
-                        (twoT - gij) / (oneT - qf_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * (oneT - f[k, j]) * (oneT - f[k2, j]))
+                    XtX[k2, k, i] +=  (gij / (qp_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * p[k, j] * p[k2, j] + 
+                        (twoT - gij) / (oneT - qp_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * (oneT - p[k, j]) * (oneT - p[k2, j]))
                 end
             end
         end
     end
 end
 
-@inline function update_q_loop_skipmissing!(XtX, Xtz, g::SnpLinAlg{T}, q, f, qf_small::AbstractArray{T}, irange, jrange, K) where T
+@inline function update_q_loop_skipmissing!(XtX, Xtz, g::SnpLinAlg{T}, q, p, qp_small::AbstractArray{T}, irange, jrange, K) where T
     oneT = one(T)
     twoT = 2one(T)
     gmat = g.s.data
     firsti, firstj = first(irange), first(jrange)
     tid = threadid()
-    qf_block!(qf_small, q, f, irange, jrange, K)
+    qp_block!(qp_small, q, p, irange, jrange, K)
     g_map = T == Float64 ? g_map_Float64 : g_map_Float32
     nonmissing_map = T == Float64 ? nonmissing_map_Float64 : nonmissing_map_Float32
     @turbo for j in jrange
@@ -639,24 +845,24 @@ end
             gij = g_map[gij_pre + 0x01]
             nonmissing = nonmissing_map[gij_pre + 0x01]
             for k in 1:K
-                Xtz[k, i] += nonmissing * (gij * f[k, j] / qf_small[i-firsti+1, j-firstj+1, tid] + 
-                    (twoT - gij) * (oneT - f[k, j]) / (oneT - qf_small[i-firsti+1, j-firstj+1, tid]))
+                Xtz[k, i] += nonmissing * (gij * p[k, j] / qp_small[i-firsti+1, j-firstj+1, tid] + 
+                    (twoT - gij) * (oneT - p[k, j]) / (oneT - qp_small[i-firsti+1, j-firstj+1, tid]))
                 for k2 in 1:K
-                    XtX[k2, k, i] += nonmissing * (gij / (qf_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * f[k, j] * f[k2, j] + 
-                        (twoT - gij) / (oneT - qf_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * (oneT - f[k, j]) * (oneT - f[k2, j]))
+                    XtX[k2, k, i] += nonmissing * (gij / (qp_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * p[k, j] * p[k2, j] + 
+                        (twoT - gij) / (oneT - qp_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * (oneT - p[k, j]) * (oneT - p[k2, j]))
                 end
             end
         end
     end
 end
 
-function update_f_loop!(XtX, Xtz, g::SnpLinAlg{T}, q, f, qf_small::AbstractArray{T}, irange, jrange, K) where T
+function update_p_loop!(XtX, Xtz, g::SnpLinAlg{T}, q, p, qp_small::AbstractArray{T}, irange, jrange, K) where T
     oneT = one(T)
     twoT = 2one(T)
     gmat = g.s.data
     firsti, firstj = first(irange), first(jrange)
     tid = threadid()
-    qf_block!(qf_small, q, f, irange, jrange, K)
+    qp_block!(qp_small, q, p, irange, jrange, K)
     g_map = T == Float64 ? g_map_Float64 : g_map_Float32
     @turbo for j in jrange
         for i in irange
@@ -666,24 +872,24 @@ function update_f_loop!(XtX, Xtz, g::SnpLinAlg{T}, q, f, qf_small::AbstractArray
             gij_pre = blk_shifted & 0x03
             gij = g_map[gij_pre + 0x01] + (gij_pre == 0x01) * g.μ[j]
             for k in 1:K
-                Xtz[k, j] += (gij * q[k, i] / qf_small[i-firsti+1, j-firstj+1, tid] - 
-                        (twoT - gij) * q[k, i] / (oneT - qf_small[i-firsti+1, j-firstj+1, tid]))
+                Xtz[k, j] += (gij * q[k, i] / qp_small[i-firsti+1, j-firstj+1, tid] - 
+                        (twoT - gij) * q[k, i] / (oneT - qp_small[i-firsti+1, j-firstj+1, tid]))
                 for k2 in 1:K
-                    XtX[k2, k, j] += (gij / (qf_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * q[k, i] * q[k2, i] + 
-                        (twoT - gij) / (oneT - qf_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * q[k, i] * q[k2, i])
+                    XtX[k2, k, j] += (gij / (qp_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * q[k, i] * q[k2, i] + 
+                        (twoT - gij) / (oneT - qp_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * q[k, i] * q[k2, i])
                 end
             end
         end
     end
 end
 
-function update_f_loop_skipmissing!(XtX, Xtz, g::SnpLinAlg{T}, q, f, qf_small::AbstractArray{T}, irange, jrange, K) where T
+function update_p_loop_skipmissing!(XtX, Xtz, g::SnpLinAlg{T}, q, p, qp_small::AbstractArray{T}, irange, jrange, K) where T
     oneT = one(T)
     twoT = 2one(T)
     gmat = g.s.data
     firsti, firstj = first(irange), first(jrange)
     tid = threadid()
-    qf_block!(qf_small, q, f, irange, jrange, K)
+    qp_block!(qp_small, q, p, irange, jrange, K)
     g_map = T == Float64 ? g_map_Float64 : g_map_Float32
     nonmissing_map = T == Float64 ? nonmissing_map_Float64 : nonmissing_map_Float32
     @turbo for j in jrange
@@ -695,11 +901,11 @@ function update_f_loop_skipmissing!(XtX, Xtz, g::SnpLinAlg{T}, q, f, qf_small::A
             gij = g_map[gij_pre + 0x01]
             nonmissing = nonmissing_map[gij_pre + 0x01]
             for k in 1:K
-                Xtz[k, j] += nonmissing * (gij * q[k, i] / qf_small[i-firsti+1, j-firstj+1, tid] - 
-                        (twoT - gij) * q[k, i] / (oneT - qf_small[i-firsti+1, j-firstj+1, tid]))
+                Xtz[k, j] += nonmissing * (gij * q[k, i] / qp_small[i-firsti+1, j-firstj+1, tid] - 
+                        (twoT - gij) * q[k, i] / (oneT - qp_small[i-firsti+1, j-firstj+1, tid]))
                 for k2 in 1:K
-                    XtX[k2, k, j] += nonmissing * (gij / (qf_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * q[k, i] * q[k2, i] + 
-                        (twoT - gij) / (oneT - qf_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * q[k, i] * q[k2, i])
+                    XtX[k2, k, j] += nonmissing * (gij / (qp_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * q[k, i] * q[k2, i] + 
+                        (twoT - gij) / (oneT - qp_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * q[k, i] * q[k2, i])
                 end
             end
         end
