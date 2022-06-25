@@ -232,7 +232,7 @@ function update_p!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=not
         @assert d.skipmissing "`skipmissing`` must be true for GPU computation"
         copyto_sync!([d_cu.q, d_cu.p], [q, p])
         update_p_cuda!(d_cu, g_cu)
-        copyto_sync!([XtX, Xtz], [d_cu.XtX_p, d_cu.Xtz_f])
+        copyto_sync!([XtX, Xtz], [d_cu.XtX_p, d_cu.Xtz_p])
     end
 
     # solve quadratic programming problems.
