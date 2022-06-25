@@ -117,10 +117,7 @@ function _admixture_base(filename, K;
     J = size(g_la, 2)
     d = AdmixData{T}(I, J, K, Q; skipmissing=true, rng=rng)
     if use_gpu
-        d_cu = CuAdmixData(d, g_la)
-        Ibytes = (I + 3) ÷ 4
-        g_cu = CuArray{UInt8, 2}(undef, Ibytes, J)
-        copyto!(g_cu, g.data)
+        d_cu, g_cu = _cu_admixture_base(d, g_la, J)
     else 
         d_cu = nothing
         g_cu = nothing
