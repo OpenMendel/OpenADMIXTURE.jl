@@ -231,7 +231,7 @@ function update_p!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=not
     else # GPU operation
         @assert d.skipmissing "`skipmissing`` must be true for GPU computation"
         copyto_sync!([d_cu.q, d_cu.p], [q, p])
-        update_f_cuda!(d_cu, g_cu)
+        update_p_cuda!(d_cu, g_cu)
         copyto_sync!([XtX, Xtz], [d_cu.XtX_p, d_cu.Xtz_f])
     end
 
@@ -245,8 +245,8 @@ function update_p!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=not
             # even the views are allocating something, so we use preallocated views.
             XtX_ = XtXv[j]
             Xtz_ = Xtzv[j]
-            f_ = pv[j]
-            fdiff_ = pdiffv[j]
+            p_ = pv[j]
+            pdiff_ = pdiffv[j]
 
             t = threadid()
             tableau_k1 = d.tableau_k1v[t]
@@ -255,8 +255,8 @@ function update_p!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=not
             tmp_k1_ = d.tmp_k1_v[t]
             swept = d.sweptv[t]
 
-            create_tableau!(tableau_k1, XtX_, Xtz_, f_, d.v_kk, tmp_k, false)
-            quadratic_program!(fdiff_, tableau_k1, f_, pmin, pmax, K, 0,
+            create_tableau!(tableau_k1, XtX_, Xtz_, p_, d.v_kk, tmp_k, false)
+            quadratic_program!(pdiff_, tableau_k1, p_, pmin, pmax, K, 0,
                 tmp_k1, tmp_k1_, swept)
         end
         @turbo for j in 1:J
@@ -265,7 +265,7 @@ function update_p!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=not
             end
         end
         # p_next .= f .+ fdiff
-        project_f!(p_next)
+        project_p!(p_next)
         # println(maximum(abs.(fdiff)))
     end
 end

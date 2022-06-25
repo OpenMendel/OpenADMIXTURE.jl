@@ -93,7 +93,7 @@ function admixture_qn!(d::AdmixData{T}, g::AbstractArray{T}, iter::Int=1000,
                 @assert false "Invalid mode"
             end
 
-            project_f!(d.p_tmp)
+            project_p!(d.p_tmp)
             project_q!(d.q_tmp, d.idxv[1])
             # qf!(d.qf, d.q_tmp, d.f_tmp)
             ll_qn = if d_cu !== nothing # GPU mode
