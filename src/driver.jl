@@ -127,6 +127,6 @@ function _admixture_base(filename, K;
     d
 end
 
-# function _cu_admixture_base(d, g_la, I, J)
-#     # dummy
-# end
+function _cu_admixture_base(d, g_la, I, J)
+    # dummy, main body defined inside CUDA portion.
+end
