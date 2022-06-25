@@ -117,7 +117,7 @@ function _admixture_base(filename, K;
     J = size(g_la, 2)
     d = AdmixData{T}(I, J, K, Q; skipmissing=true, rng=rng)
     if use_gpu
-        d_cu, g_cu = _cu_admixture_base(d, g_la, J)
+        d_cu, g_cu = _cu_admixture_base(d, g_la, I, J)
     else 
         d_cu = nothing
         g_cu = nothing
@@ -126,3 +126,7 @@ function _admixture_base(filename, K;
     @time admixture_qn!(d, g_la, n_iter, rtol; d_cu = d_cu, g_cu = g_cu, mode=:ZAL)
     d
 end
+
+# function _cu_admixture_base(d, g_la, I, J)
+#     # dummy
+# end
