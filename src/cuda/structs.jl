@@ -30,7 +30,7 @@ function CuAdmixData(d::AdmixData{T}, g::SnpLinAlg{T}, width=d.J) where T
     CuAdmixData{T}(q, q_next, p, p_next, p_tmp, XtX_q, Xtz_q, XtX_p, Xtz_p)
 end
 
-function _cu_admixture_base(d, g_la, I, J)
+function _cu_admixture_base(d::AdmixData, g_la::SnpLinAlg, I::Int, J::Int)
     d_cu = CuAdmixData(d, g_la)
     Ibytes = (I + 3) ÷ 4
     g_cu = CuArray{UInt8, 2}(undef, Ibytes, J)
