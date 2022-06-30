@@ -1,1 +1,1 @@
-# AdmiXpress
+# OpenADMIXTURE.jl
