@@ -1,4 +1,4 @@
-module OpenAdmixture
+module OpenADMIXTURE
 using Random, LoopVectorization
 import LinearAlgebra: svd, norm, diag, mul!, dot
 using SnpArrays

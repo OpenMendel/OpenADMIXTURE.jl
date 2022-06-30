@@ -1,3 +1,5 @@
+# This file is originally written by Dr. Kenneth Lange. 
+# Modified by Dr. Seyoon Ko for performance improvement.
 """
 Calculates the tableau used in minimizing the quadratic 
 0.5 x' Q x + r' x, subject to Ax = b and parameter lower 
