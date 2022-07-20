@@ -79,10 +79,27 @@ function update_q_cuda!(XtX, Xtz, g, q, p, I, J)
     nothing
 end
 
+function update_q_cuda_gradonly!(XtX, Xtz, g, q, p, I, J)
+    fill!(XtX, zero(eltype(XtX)))
+    fill!(Xtz, zero(eltype(Xtz)))
+    kernel = @cuda launch=false update_q_kernel_gradonly!(XtX, Xtz, g, q, p, 1:I, 1:J)
+    config = launch_configuration(kernel.fun)
+    threads = config.threads
+    threads_1d = Int(floor(sqrt(threads)))
+    # println("threads: $threads")
+    CUDA.@sync kernel(XtX, Xtz, g, q, p, 1:I, 1:J; threads=(threads_1d, threads_1d), 
+        blocks=(threads_1d, threads_1d))#cld(I, threads_1d), cld(I, threads_1d)))
+    nothing
+end
+
 function update_q_cuda!(d::CuAdmixData{T}, g_cu::CuMatrix{UInt8}) where T
     I, J, K = size(d.q, 2), size(g_cu, 2), size(d.q, 1)
     if J == size(d.p, 2)
-        update_q_cuda!(d.XtX_q, d.Xtz_q, g_cu, d.q, d.p, I, J)
+        if !d.approxhess
+            update_q_cuda!(d.XtX_q, d.Xtz_q, g_cu, d.q, d.p, I, J)
+        else
+            update_q_cuda_gradonly!(d.XtX_q, d.Xtz_q, g_cu, d.q, d.p, I, J)
+        end
     else
         @assert false "Not implemented"
     end   
@@ -101,10 +118,27 @@ function update_p_cuda!(XtX, Xtz, g, q, p, I, J)
     nothing
 end
 
+function update_p_cuda_gradonly!(XtX, Xtz, g, q, p, I, J)
+    fill!(XtX, zero(eltype(XtX)))
+    fill!(Xtz, zero(eltype(Xtz)))
+    kernel = @cuda launch=false update_p_kernel_gradonly!(XtX, Xtz, g, q, p, 1:I, 1:J)
+    config = launch_configuration(kernel.fun)
+    threads = config.threads
+    threads_1d = Int(floor(sqrt(threads)))
+    # println("threads: $threads")
+    CUDA.@sync kernel(XtX, Xtz, g, q, p, 1:I, 1:J; threads=(threads_1d, threads_1d), 
+        blocks=(threads_1d, threads_1d))#cld(I, threads_1d), cld(I, threads_1d)))
+    nothing
+end
+
 function update_p_cuda!(d::CuAdmixData{T}, g_cu::CuMatrix{UInt8}) where T
     I, J, K = size(d.q, 2), size(g_cu, 2), size(d.q, 1)
     if J == size(d.p, 2)
-        update_p_cuda!(d.XtX_p, d.Xtz_p, g_cu, d.q, d.p, I, J)
+        if !d.approxhess
+            update_p_cuda!(d.XtX_p, d.Xtz_p, g_cu, d.q, d.p, I, J)
+        else
+            update_p_cuda_gradonly!(d.XtX_p, d.Xtz_p, g_cu, d.q, d.p, I, J)
+        end
     else
         @assert false "Not implemented"
     end   

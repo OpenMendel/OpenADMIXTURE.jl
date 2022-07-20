@@ -16,7 +16,7 @@ function loglikelihood(g::AbstractArray{T}, q, p, qp_small::AbstractArray{T, 3},
     #K = 0 # dummy
     # r = tiler_scalar_1d(loglikelihood_loop, typeof(qp_small), zero(T), (g, q, p, qp_small), 1:I, 1:J, K)
     if !skipmissing
-        r = loglikelihood_loop(g, q, p, nothing, 1:I, 1:J, K)
+        # r = loglikelihood_loop(g, q, p, nothing, 1:I, 1:J, K)
     else
         r = loglikelihood_loop_skipmissing(g, q, p, nothing, 1:I, 1:J, K)
     end
@@ -28,7 +28,7 @@ function loglikelihood(g::SnpLinAlg{T}, q, p, qp_small::AbstractArray{T, 3}, K, 
     I = size(q, 2)
     J = size(p, 2)
     #K = 0 # dummy
-    r = tiler_scalar(skipmissing ? loglikelihood_loop_skipmissing : loglikelihood_loop, 
+    r = tiler_scalar(loglikelihood_loop_skipmissing, 
         typeof(qp_small), zero(Float64), (g, q, p, qp_small), 1:I, 1:J, K)
     # r = loglikelihood_loop(g, q, p, nothing, 1:I, 1:J, K)
     r
@@ -73,7 +73,7 @@ function em_q!(d::AdmixData{T}, g::AbstractArray{T}, mode=:base) where T
         q_next, q, p = d.q_next2, d.q_next, d.p_next
     end
     fill!(q_next, zero(T))
-    @time threader!(d.skipmissing ? em_q_loop_skipmissing! : em_q_loop!,
+    @time threader!(em_q_loop_skipmissing!,
         typeof(q_next), (q_next, g, q, p, qp_small), 1:I, 1:J, K, true; maxL=64)
     # @time tiler!(d.skipmissing ? em_q_loop_skipmissing! : em_q_loop!, 
     #     typeof(q_next), (q_next, g, q, p, qp_small), 1:I, 1:J, K)
@@ -110,7 +110,7 @@ function em_p!(d::AdmixData{T}, g::AbstractArray{T}, mode=:base) where T
     fill!(p_tmp, zero(T))
     fill!(p_next, zero(T))
 
-    @time threader!(d.skipmissing ? em_p_loop_skipmissing! : em_p_loop!, 
+    @time threader!(em_p_loop_skipmissing!, 
         typeof(p_next), (p_next, g, q, p, p_tmp, qp_small), 1:I, 1:J, K, false; maxL=64)
     # @time tiler!(d.skipmissing ? em_f_loop_skipmissing! : em_f_loop!, 
     #     typeof(p_next), (p_next, g, q, p, f_tmp, qp_small), 1:I, 1:J, K)
@@ -156,10 +156,10 @@ function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=not
     @time if d_cu === nothing # CPU operation
         fill!(XtX, zero(T))
         fill!(Xtz, zero(T))
-        threader!(d.skipmissing ? update_q_loop_skipmissing! : update_q_loop!, 
+        threader!(!d.approxhess ? update_q_loop_skipmissing! : update_q_loop_gradonly!, 
             typeof(XtX), (XtX, Xtz, g, q, p, qp_small), 1:I, 1:J, K, true; maxL=16)
     else # GPU operation
-        @assert d.skipmissing "`skipmissing`` must be true for GPU computation"
+        # @assert d.skipmissing "`skipmissing`` must be true for GPU computation"
         copyto_sync!([d_cu.q, d_cu.p], [q, p])
         update_q_cuda!(d_cu, g_cu)
         copyto_sync!([XtX, Xtz], [d_cu.XtX_q, d_cu.Xtz_q])
@@ -226,10 +226,10 @@ function update_p!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=not
         fill!(XtX, zero(T))
         fill!(Xtz, zero(T))
 
-        threader!(d.skipmissing ? update_p_loop_skipmissing! : update_p_loop!, 
+        threader!(!d.approxhess ? update_p_loop_skipmissing! : update_p_loop_gradonly!, 
             typeof(XtX), (XtX, Xtz, g, q, p, qp_small), 1:I, 1:J, K, false; maxL=16)
     else # GPU operation
-        @assert d.skipmissing "`skipmissing`` must be true for GPU computation"
+        # @assert d.skipmissing "`skipmissing`` must be true for GPU computation"
         copyto_sync!([d_cu.q, d_cu.p], [q, p])
         update_p_cuda!(d_cu, g_cu)
         copyto_sync!([XtX, Xtz], [d_cu.XtX_p, d_cu.Xtz_p])

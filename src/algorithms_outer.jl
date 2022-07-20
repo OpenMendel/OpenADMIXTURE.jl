@@ -26,7 +26,7 @@ function init_em!(d::AdmixData{T}, g::AbstractArray{T}, iter::Integer; d_cu=noth
         copyto_sync!([d.p, d.q], [d_cu.p, d_cu.q])
         d.ll_new = loglikelihood(d_cu, g_cu)
     else
-        d.ll_new = loglikelihood(g, d.q, d.p, d.qp_small, d.K, d.skipmissing)
+        d.ll_new = loglikelihood(g, d.q, d.p, d.qp_small, d.K, true)
     end
 end
 
@@ -55,7 +55,7 @@ function admixture_qn!(d::AdmixData{T}, g::AbstractArray{T}, iter::Int=1000,
             copyto_sync!([d_cu.p, d_cu.q], [d.p, d.q])
             d.ll_new = loglikelihood(d_cu, g_cu)
         else
-            d.ll_new = loglikelihood(g, d.q, d.p, d.qp_small, d.K, d.skipmissing)
+            d.ll_new = loglikelihood(g, d.q, d.p, d.qp_small, d.K, true)
         end
     end
 
@@ -75,7 +75,7 @@ function admixture_qn!(d::AdmixData{T}, g::AbstractArray{T}, iter::Int=1000,
                 copyto_sync!([d_cu.p, d_cu.q], [d.p_next2, d.q_next2])
                 loglikelihood(d_cu, g_cu)
             else
-                loglikelihood(g, d.q_next2, d.p_next2, d.qp_small, d.K, d.skipmissing)
+                loglikelihood(g, d.q_next2, d.p_next2, d.qp_small, d.K, true)
             end
             
             if mode == :ZAL
@@ -100,7 +100,7 @@ function admixture_qn!(d::AdmixData{T}, g::AbstractArray{T}, iter::Int=1000,
                 copyto_sync!([d_cu.p, d_cu.q], [d.p_tmp, d.q_tmp])
                 loglikelihood(d_cu, g_cu)
             else # CPU mode
-                loglikelihood(g, d.q_tmp, d.p_tmp, d.qp_small, d.K, d.skipmissing)
+                loglikelihood(g, d.q_tmp, d.p_tmp, d.qp_small, d.K, true)
             end
             if d.ll_prev < ll_qn
                 d.x .= d.x_tmp

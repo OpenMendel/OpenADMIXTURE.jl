@@ -501,21 +501,6 @@ end
     r
 end
 
-@inline function em_q_loop!(q_next, g::AbstractArray{T}, q, p, qp_small::AbstractArray{T}, 
-    irange, jrange, K) where T
-    firsti, firstj = first(irange), first(jrange)
-    tid = threadid()
-    qp_block!(qp_small, q, p, irange, jrange, K)
-    @turbo for j in jrange
-        for i in irange
-            for k in 1:K
-                gij = g[i, j]
-                q_next[k, i] += (gij * q[k, i] * p[k, j] / qp_small[i-firsti+1, j-firstj+1, tid] + 
-                    (2 - gij) * q[k, i] * (1 - p[k, j]) / (1 - qp_small[i-firsti+1, j-firstj+1, tid]))
-            end
-        end
-    end
-end
 
 """
     em_q_loop_skipmissing!(q_next, g, q, p, qp_small, irange, jrange, K)
@@ -549,27 +534,6 @@ Compute EM update for `q`, compute local `qp` on-the-fly.
     end
 end
 
-@inline function em_q_loop!(q_next, g::SnpLinAlg{T}, q, p, qp_small, irange, jrange, K) where T
-    firsti, firstj = first(irange), first(jrange)
-    tid = threadid()
-    qp_block!(qp_small, q, p, irange, jrange, K)
-    gmat = g.s.data
-    g_map = T == Float64 ? g_map_Float64 : g_map_Float32
-    @turbo for j in jrange
-        for i in irange
-            for k in 1:K
-                blk = gmat[(i - 1) >> 2 + 1, j]
-                re = (i - 1) % 4
-                blk_shifted  = blk >> (re << 1)
-                gij_pre = blk_shifted & 0x03
-                gij = g_map[gij_pre + 0x01] + (gij_pre == 0x01) * g.μ[j]
-                q_next[k, i] += (gij * q[k, i] * p[k, j] / qp_small[i-firsti+1, j-firstj+1, tid] + 
-                    (2 - gij) * q[k, i] * (1 - p[k, j]) / (1 - qp_small[i-firsti+1, j-firstj+1, tid]))
-            end
-        end
-    end
-end
-
 @inline function em_q_loop_skipmissing!(q_next, g::SnpLinAlg{T}, q, p, qp_small::AbstractArray{T}, irange, jrange, K) where T
     firsti, firstj = first(irange), first(jrange)
     tid = threadid()
@@ -589,21 +553,6 @@ end
                 tmp = (gij * q[k, i] * p[k, j] / qp_small[i-firsti+1, j-firstj+1, tid] + 
                     (2 - gij) * q[k, i] * (1 - p[k, j]) / (1 - qp_small[i-firsti+1, j-firstj+1, tid]))
                 q_next[k, i] += nonmissing * tmp
-            end
-        end
-    end
-end
-
-@inline function em_p_loop!(f_next, g::AbstractArray{T}, q, p, p_tmp, qp_small::AbstractArray{T}, irange, jrange, K) where T
-    firsti, firstj = first(irange), first(jrange)
-    tid = threadid()
-    qp_block!(qp_small, q, p, irange, jrange, K)
-    @turbo for j in jrange
-        for i in irange
-            gij = g[i, j]
-            for k in 1:K
-                p_tmp[k, j] += gij * q[k, i] * p[k, j] / qp_small[i-firsti+1, j-firstj+1, tid]
-                f_next[k, j] += (2 - gij) * q[k, i] * (one(T) - p[k, j]) / (one(T) - qp_small[i-firsti+1, j-firstj+1, tid])
             end
         end
     end
@@ -639,27 +588,6 @@ Compute EM update for `p`, compute local `qp` on-the-fly.
     end
 end
 
-@inline function em_p_loop!(p_next, g::SnpLinAlg{T}, q, p, p_tmp, qp_small::AbstractArray{T}, irange, jrange, K) where T
-    firsti, firstj = first(irange), first(jrange)
-    tid = threadid()
-    qp_block!(qp_small, q, p, irange, jrange, K)
-    gmat = g.s.data
-    g_map = T == Float64 ? g_map_Float64 : g_map_Float32
-    @turbo for j in jrange
-        for i in irange
-            blk = gmat[(i - 1) >> 2 + 1, j]
-            re = (i - 1) % 4
-            blk_shifted  = blk >> (re << 1)
-            gij_pre = blk_shifted & 0x03
-            gij = g_map[gij_pre + 0x01] + (gij_pre == 0x01) * g.μ[j]
-            for k in 1:K
-                p_tmp[k, j] += gij * q[k, i] * p[k, j] / qp_small[i-firsti+1, j-firstj+1, tid]
-                p_next[k, j] += (2 - gij) * q[k, i] * (one(T) - p[k, j]) / (one(T) - qp_small[i-firsti+1, j-firstj+1, tid])
-            end
-        end
-    end
-end
-
 @inline function em_p_loop_skipmissing!(f_next, g::SnpLinAlg{T}, q, p, p_tmp, qp_small::AbstractArray{T}, irange, jrange, K) where T
     firsti, firstj = first(irange), first(jrange)
     tid = threadid()
@@ -678,28 +606,6 @@ end
             for k in 1:K
                 p_tmp[k, j] += nonmissing * (gij * q[k, i] * p[k, j] / qp_small[i-firsti+1, j-firstj+1, tid])
                 f_next[k, j] += nonmissing * ((2 - gij) * q[k, i] * (one(T) - p[k, j]) / (one(T) - qp_small[i-firsti+1, j-firstj+1, tid]))
-            end
-        end
-    end
-end
-
-
-@inline function update_q_loop!(XtX, Xtz, g::AbstractArray{T}, q, p, qp_small::AbstractArray{T}, irange, jrange, K) where T
-    oneT = one(T)
-    twoT = 2one(T)
-    firsti, firstj = first(irange), first(jrange)
-    tid = threadid()
-    qp_block!(qp_small, q, p, irange, jrange, K)
-    @turbo for j in jrange
-        for i in irange
-            gij = g[i, j]
-            for k in 1:K
-                Xtz[k, i] += gij * p[k, j] / qp_small[i-firsti+1, j-firstj+1, tid] + 
-                    (twoT - gij) * (oneT - p[k, j]) / (oneT - qp_small[i-firsti+1, j-firstj+1, tid])
-                for k2 in 1:K
-                    XtX[k2, k, i] +=  gij / (qp_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * p[k, j] * p[k2, j] + 
-                        (twoT - gij) / (oneT - qp_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * (oneT - p[k, j]) * (oneT - p[k2, j])
-                end
             end
         end
     end
@@ -742,7 +648,7 @@ Compute gradient and hessian of loglikelihood w.r.t. `q`, compute local `qp` on-
     end
 end
 
-@inline function update_p_loop!(XtX, Xtz, g::AbstractArray{T}, q, p, qp_small::AbstractArray{T}, irange, jrange, K) where T
+@inline function update_q_loop_gradonly!(XtX, Xtz, g::AbstractArray{T}, q, p, qp_small::AbstractArray{T}, irange, jrange, K) where T
     oneT = one(T)
     twoT = 2one(T)
     firsti, firstj = first(irange), first(jrange)
@@ -751,13 +657,17 @@ end
     @turbo for j in jrange
         for i in irange
             gij = g[i, j]
+            nonmissing = (gij == gij)
             for k in 1:K
-                Xtz[k, j] += gij * q[k, i] / qp_small[i-firsti+1, j-firstj+1, tid] - 
-                        (twoT - gij) * q[k, i] / (oneT - qp_small[i-firsti+1, j-firstj+1, tid])
-                for k2 in 1:K
-                    XtX[k2, k, j] += gij / (qp_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * q[k, i] * q[k2, i] + 
-                        (twoT - gij) / (oneT - qp_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * q[k, i] * q[k2, i]
-                end
+                Xtz[k, i] += nonmissing ? (gij * p[k, j] / qp_small[i-firsti+1, j-firstj+1, tid] + 
+                    (twoT - gij) * (oneT - p[k, j]) / (oneT - qp_small[i-firsti+1, j-firstj+1, tid])) : zero(T)
+            end
+        end
+    end
+    @turbo for i in irange
+        for k in 1:K
+            for k2 in 1:K
+                XtX[k2, k, i] = - Xtz[k, i] * Xtz[k2, i]
             end
         end
     end
@@ -800,28 +710,26 @@ Compute gradient and hessian of loglikelihood w.r.t. `p`, compute local `qp` on-
     end
 end
 
-@inline function update_q_loop!(XtX, Xtz, g::SnpLinAlg{T}, q, p, qp_small::AbstractArray{T}, irange, jrange, K) where T
+@inline function update_p_loop_gradonly!(XtX, Xtz, g::AbstractArray{T}, q, p, qp_small::AbstractArray{T}, irange, jrange, K) where T
     oneT = one(T)
     twoT = 2one(T)
-    gmat = g.s.data
     firsti, firstj = first(irange), first(jrange)
     tid = threadid()
     qp_block!(qp_small, q, p, irange, jrange, K)
-    g_map = T == Float64 ? g_map_Float64 : g_map_Float32
     @turbo for j in jrange
         for i in irange
-            blk = gmat[(i - 1) >> 2 + 1, j]
-            re = (i - 1) % 4
-            blk_shifted  = blk >> (re << 1)
-            gij_pre = blk_shifted & 0x03
-            gij = g_map[gij_pre + 0x01] + (gij_pre == 0x01) * g.μ[j]
+            gij = g[i, j]
+            nonmissing =  (gij == gij)
             for k in 1:K
-                Xtz[k, i] += (gij * p[k, j] / qp_small[i-firsti+1, j-firstj+1, tid] + 
-                    (twoT - gij) * (oneT - p[k, j]) / (oneT - qp_small[i-firsti+1, j-firstj+1, tid]))
-                for k2 in 1:K
-                    XtX[k2, k, i] +=  (gij / (qp_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * p[k, j] * p[k2, j] + 
-                        (twoT - gij) / (oneT - qp_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * (oneT - p[k, j]) * (oneT - p[k2, j]))
-                end
+                Xtz[k, j] += nonmissing ? (gij * q[k, i] / qp_small[i-firsti+1, j-firstj+1, tid] - 
+                        (twoT - gij) * q[k, i] / (oneT - qp_small[i-firsti+1, j-firstj+1, tid])) : zero(T)
+            end
+        end
+    end
+    @turbo for j in jrange
+        for k in 1:K
+            for k2 in 1:K
+                XtX[k2, k, j] = - Xtz[k, j] * Xtz[k2, j]
             end
         end
     end
@@ -856,7 +764,7 @@ end
     end
 end
 
-function update_p_loop!(XtX, Xtz, g::SnpLinAlg{T}, q, p, qp_small::AbstractArray{T}, irange, jrange, K) where T
+@inline function update_q_loop_gradonly!(XtX, Xtz, g::SnpLinAlg{T}, q, p, qp_small::AbstractArray{T}, irange, jrange, K) where T
     oneT = one(T)
     twoT = 2one(T)
     gmat = g.s.data
@@ -864,20 +772,25 @@ function update_p_loop!(XtX, Xtz, g::SnpLinAlg{T}, q, p, qp_small::AbstractArray
     tid = threadid()
     qp_block!(qp_small, q, p, irange, jrange, K)
     g_map = T == Float64 ? g_map_Float64 : g_map_Float32
+    nonmissing_map = T == Float64 ? nonmissing_map_Float64 : nonmissing_map_Float32
     @turbo for j in jrange
         for i in irange
             blk = gmat[(i - 1) >> 2 + 1, j]
             re = (i - 1) % 4
             blk_shifted  = blk >> (re << 1)
             gij_pre = blk_shifted & 0x03
-            gij = g_map[gij_pre + 0x01] + (gij_pre == 0x01) * g.μ[j]
+            gij = g_map[gij_pre + 0x01]
+            nonmissing = nonmissing_map[gij_pre + 0x01]
             for k in 1:K
-                Xtz[k, j] += (gij * q[k, i] / qp_small[i-firsti+1, j-firstj+1, tid] - 
-                        (twoT - gij) * q[k, i] / (oneT - qp_small[i-firsti+1, j-firstj+1, tid]))
-                for k2 in 1:K
-                    XtX[k2, k, j] += (gij / (qp_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * q[k, i] * q[k2, i] + 
-                        (twoT - gij) / (oneT - qp_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * q[k, i] * q[k2, i])
-                end
+                Xtz[k, i] += nonmissing * (gij * p[k, j] / qp_small[i-firsti+1, j-firstj+1, tid] + 
+                    (twoT - gij) * (oneT - p[k, j]) / (oneT - qp_small[i-firsti+1, j-firstj+1, tid]))
+            end
+        end
+    end
+    @turbo for i in irange
+        for k in 1:K
+            for k2 in 1:K
+                XtX[k2, k, i] = - Xtz[k, i] * Xtz[k2, i]
             end
         end
     end
@@ -907,6 +820,38 @@ function update_p_loop_skipmissing!(XtX, Xtz, g::SnpLinAlg{T}, q, p, qp_small::A
                     XtX[k2, k, j] += nonmissing * (gij / (qp_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * q[k, i] * q[k2, i] + 
                         (twoT - gij) / (oneT - qp_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * q[k, i] * q[k2, i])
                 end
+            end
+        end
+    end
+end
+
+function update_p_loop_gradonly!(XtX, Xtz, g::SnpLinAlg{T}, q, p, qp_small::AbstractArray{T}, irange, jrange, K) where T
+    oneT = one(T)
+    twoT = 2one(T)
+    gmat = g.s.data
+    firsti, firstj = first(irange), first(jrange)
+    tid = threadid()
+    qp_block!(qp_small, q, p, irange, jrange, K)
+    g_map = T == Float64 ? g_map_Float64 : g_map_Float32
+    nonmissing_map = T == Float64 ? nonmissing_map_Float64 : nonmissing_map_Float32
+    @turbo for j in jrange
+        for i in irange
+            blk = gmat[(i - 1) >> 2 + 1, j]
+            re = (i - 1) % 4
+            blk_shifted  = blk >> (re << 1)
+            gij_pre = blk_shifted & 0x03
+            gij = g_map[gij_pre + 0x01]
+            nonmissing = nonmissing_map[gij_pre + 0x01]
+            for k in 1:K
+                Xtz[k, j] += nonmissing * (gij * q[k, i] / qp_small[i-firsti+1, j-firstj+1, tid] - 
+                        (twoT - gij) * q[k, i] / (oneT - qp_small[i-firsti+1, j-firstj+1, tid]))
+            end
+        end
+    end
+    @turbo for j in jrange
+        for k in 1:K
+            for k2 in 1:K
+                XtX[k2, k, j] = - Xtz[k, j] * Xtz[k2, j]
             end
         end
     end

@@ -38,7 +38,8 @@ function run_admixture(filename, K;
     admix_n_em_iters = 5, 
     T=Float64, 
     Q=3, 
-    use_gpu=false)
+    use_gpu=false,
+    approxhess=false)
     @assert endswith(filename, ".bed") "filename should end with .bed"
     if sparsity !== nothing
         admix_input, clusters, aims = _filter_SKFR(filename, K, sparsity; rng=rng, prefix=prefix, 
@@ -49,7 +50,7 @@ function run_admixture(filename, K;
     end
     d = _admixture_base(admix_input, K; 
         n_iter=admix_n_iter, rtol=admix_rtol, rng=rng, em_iters=admix_n_em_iters, 
-        T=T, Q=Q, use_gpu=use_gpu)
+        T=T, Q=Q, use_gpu=use_gpu, approxhess=approxhess)
     d, clusters, aims
 end
 
@@ -110,12 +111,13 @@ function _admixture_base(filename, K;
     em_iters = 5, 
     T=Float64, 
     Q=3, 
-    use_gpu=false)
+    use_gpu=false,
+    approxhess=false)
     g = SnpArray(filename)
     g_la = SnpLinAlg{T}(g)
     I = size(g_la, 1)
     J = size(g_la, 2)
-    d = AdmixData{T}(I, J, K, Q; skipmissing=true, rng=rng)
+    d = AdmixData{T}(I, J, K, Q; approxhess=approxhess, rng=rng)
     if use_gpu
         d_cu, g_cu = _cu_admixture_base(d, g_la, I, J)
     else 

@@ -11,7 +11,7 @@ mutable struct AdmixData{T}
     J           ::Int
     K           ::Int
     Q           ::Int
-    skipmissing ::Bool
+    approxhess ::Bool
 
     x           ::Matrix{T} # K x (I + J)
     x_next      ::Matrix{T}
@@ -91,7 +91,7 @@ mutable struct AdmixData{T}
 end
 
 """
-    AdmixData{T}(I, J, K, Q; skipmissing=true, rng=Random.GLOBAL_RNG)
+    AdmixData{T}(I, J, K, Q; approxhess=false, rng=Random.GLOBAL_RNG)
 Constructor for Admixture information.
 
 # Arguments:
@@ -99,10 +99,10 @@ Constructor for Admixture information.
 - J: Number of variants
 - K: Number of clusters
 - Q: Number of steps used for quasi-Newton update
-- skipmissing: skip computation of loglikelihood for missing values. Should be kept `true` in most cases
+- approxhess: Approximate hessian by outer product of gradient. Experimental.
 - rng: Random number generation.
 """
-function AdmixData{T}(I, J, K, Q; skipmissing=true, rng=Random.GLOBAL_RNG) where T
+function AdmixData{T}(I, J, K, Q; approxhess=false, rng=Random.GLOBAL_RNG) where T
     NT = nthreads()
     x = convert(Array{T}, rand(rng, K, I + J))
     x_next = similar(x)
@@ -199,7 +199,7 @@ function AdmixData{T}(I, J, K, Q; skipmissing=true, rng=Random.GLOBAL_RNG) where
     # U_q = view(reshape(U, K, (I+J), Q), :, 1:I, :)
     # U_f = view(reshape(U, K, (I+J), Q), :, (I+1):(I+J), :)
 
-    AdmixData{T}(I, J, K, Q, skipmissing, x, x_next, x_next2, x_tmp, 
+    AdmixData{T}(I, J, K, Q, approxhess, x, x_next, x_next2, x_tmp, 
         x_flat, x_next_flat, x_next2_flat, x_tmp_flat,
         x_qq, x_rr,
         q, q_next, q_next2, q_tmp, p, p_next, p_next2, p_tmp, 

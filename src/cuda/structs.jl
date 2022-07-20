@@ -9,10 +9,11 @@ struct CuAdmixData{T}
     Xtz_q::CuArray{T, 2}
     XtX_p::CuArray{T, 3}
     Xtz_p::CuArray{T, 2}
+    approxhess::Bool
 end
 function CuAdmixData(d::AdmixData{T}, g::SnpLinAlg{T}, width=d.J) where T
     I, J, K = d.I, d.J, d.K
-    @assert d.skipmissing "skipmissing must be true for CuAdmixData."
+    # @assert d.skipmissing "skipmissing must be true for CuAdmixData."
     Ibytes = (I + 3) ÷ 4
     # g_cu = CuArray{UInt8, 2}(undef, Ibytes, width)
     # if size(g, 2) == J
@@ -27,7 +28,7 @@ function CuAdmixData(d::AdmixData{T}, g::SnpLinAlg{T}, width=d.J) where T
     Xtz_q = CuArray{T, 2}(undef, K, I)
     XtX_p = CuArray{T, 3}(undef, K, K, J)
     Xtz_p = CuArray{T, 2}(undef, K, J)
-    CuAdmixData{T}(q, q_next, p, p_next, p_tmp, XtX_q, Xtz_q, XtX_p, Xtz_p)
+    CuAdmixData{T}(q, q_next, p, p_next, p_tmp, XtX_q, Xtz_q, XtX_p, Xtz_p, d.approxhess)
 end
 
 function _cu_admixture_base(d::AdmixData, g_la::SnpLinAlg, I::Int, J::Int)
