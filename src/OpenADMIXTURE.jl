@@ -1,6 +1,6 @@
 module OpenADMIXTURE
 using Random, LoopVectorization
-import LinearAlgebra: svd, norm, diag, mul!, dot
+import LinearAlgebra: svd, norm, diag, mul!, dot, BLAS, det, tr
 using SnpArrays
 using Base.Threads
 using SKFR
