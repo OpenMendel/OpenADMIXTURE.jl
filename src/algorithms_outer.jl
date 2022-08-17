@@ -105,9 +105,23 @@ function admixture_qn!(d::AdmixData{T}, g::AbstractArray{T}, iter::Int=1000,
             if d.ll_prev < ll_qn
                 d.x .= d.x_tmp
                 d.ll_new = ll_qn
-            else
+            elseif d.ll_prev < ll_basic
                 d.x .= d.x_next2
                 d.ll_new = ll_basic
+            else
+                @warn "fallback to EM"
+                d_ = (d_cu === nothing) ? d : d_cu
+                g_ = (g_cu === nothing) ? g : g_cu
+                em_q!(d_, g_)
+                em_p!(d_, g_)
+                d_.p .= d_.p_next
+                d_.q .= d_.q_next 
+                d.ll_new = if d_cu !== nothing
+                    copyto_sync!([d_cu.p, d_cu.q], [d.p, d.q])
+                    loglikelihood(d_cu, g_cu)
+                else
+                    loglikelihood(g, d.q, d.p, d.qp_small, d.K, true)
+                end
             end
             println(d.ll_prev)
             println(ll_basic)

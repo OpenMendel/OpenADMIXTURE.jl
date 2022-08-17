@@ -142,6 +142,7 @@ function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=not
 # function update_q!(q_next, g::AbstractArray{T}, q, p, qdiff, XtX, Xtz, qf) where T
     I, J, K = d.I, d.J, d.K
     qdiff, XtX, Xtz, qp_small = d.q_tmp, d.XtX_q, d.Xtz_q, d.qp_small
+    tmp_grad = Vector{T}(undef, K)
     q_next = update2 ? d.q_next2 : d.q_next
     q      = update2 ? d.q_next  : d.q
     p      = update2 ? d.p_next  : d.p
@@ -156,15 +157,29 @@ function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=not
     @time if d_cu === nothing # CPU operation
         fill!(XtX, zero(T))
         fill!(Xtz, zero(T))
-        threader!(!d.approxhess ? update_q_loop_skipmissing! : update_q_loop_gradonly!, 
-            typeof(XtX), (XtX, Xtz, g, q, p, qp_small), 1:I, 1:J, K, true; maxL=16)
+        if !d.approxhess
+            threader!(update_q_loop_skipmissing!, 
+                typeof(XtX), (XtX, Xtz, g, q, p, qp_small), 1:I, 1:J, K, true; maxL=16)
+        else
+            threader!(update_q_loop_gradonly!, 
+                typeof(XtX), (XtX, Xtz, tmp_grad, g, q, p, qp_small), 1:I, 1:J, K, true; maxL=16)
+        end            
     else # GPU operation
         # @assert d.skipmissing "`skipmissing`` must be true for GPU computation"
         copyto_sync!([d_cu.q, d_cu.p], [q, p])
         update_q_cuda!(d_cu, g_cu)
         copyto_sync!([XtX, Xtz], [d_cu.XtX_q, d_cu.Xtz_q])
     end
+    if d.approxhess
+        # XtX ./= J
+    end
+    # println(minimum([det(XtX[:, :, i]) for i in 1:I]))
+    # println(minimum([tr(XtX[:, :, i]) for i in 1:I]))
 
+    # println(maximum([det(XtX[:, :, i]) for i in 1:I]))
+    # println(minimum([tr(XtX[:, :, i]) for i in 1:I]))
+
+    # println(tr(abs.(XtX[:, :, 1])))
     # Solve the quadratic programs
     @time begin
         Xtz .*= -1 
@@ -189,12 +204,36 @@ function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=not
             quadratic_program!(qdiff_, tableau_k2, q_, pmin, pmax, K, 1, 
                 tmp_k2, tmp_k2_, swept)
         end
-        @turbo for i in 1:I
-            for k in 1:K
-                q_next[k, i] = q[k, i] + qdiff[k, i]
+        ll_prev = if d_cu !== nothing
+            copyto_sync!([d_cu.p, d_cu.q], [p, q])
+            loglikelihood(d_cu, g_cu)
+        else
+            loglikelihood(g, q, p, qp_small, K, true)
+        end
+
+        alpha = one(T)
+        println(ll_prev)
+        while true
+            @turbo for i in 1:I
+                for k in 1:K
+                    q_next[k, i] = q[k, i] + alpha * qdiff[k, i]
+                end
+            end
+            project_q!(q_next, d.idxv[1])
+
+            ll_new = if d_cu !== nothing
+                copyto_sync!([d_cu.p, d_cu.q], [p, q_next])
+                loglikelihood(d_cu, g_cu)
+            else
+                loglikelihood(g, q_next, p, qp_small, K, true)
+            end
+            if ll_new < ll_prev
+                alpha *= 0.5
+                println("q: ", alpha)
+            else
+                break
             end
         end
-        project_q!(q_next, d.idxv[1])
     end
 end
 
@@ -220,21 +259,38 @@ function update_p!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=not
     pdiffv = d.p_tmpv
     XtXv   = d.XtX_pv
     Xtzv   = d.Xtz_pv
-
+    tmp_grad = Vector{T}(undef, K)
     d.ll_prev = d.ll_new 
     @time if d_cu === nothing # CPU operation
         fill!(XtX, zero(T))
         fill!(Xtz, zero(T))
 
-        threader!(!d.approxhess ? update_p_loop_skipmissing! : update_p_loop_gradonly!, 
-            typeof(XtX), (XtX, Xtz, g, q, p, qp_small), 1:I, 1:J, K, false; maxL=16)
+        # threader!(!d.approxhess ? update_p_loop_skipmissing! : update_p_loop_gradonly!, 
+        #     typeof(XtX), (XtX, Xtz, g, q, p, qp_small), 1:I, 1:J, K, false; maxL=16)
+        if !d.approxhess
+            threader!(update_p_loop_skipmissing!, 
+                typeof(XtX), (XtX, Xtz, g, q, p, qp_small), 1:I, 1:J, K, true; maxL=16)
+        else
+            threader!(update_p_loop_gradonly!, 
+                typeof(XtX), (XtX, Xtz, tmp_grad, g, q, p, qp_small), 1:I, 1:J, K, true; maxL=16)
+        end  
     else # GPU operation
         # @assert d.skipmissing "`skipmissing`` must be true for GPU computation"
         copyto_sync!([d_cu.q, d_cu.p], [q, p])
         update_p_cuda!(d_cu, g_cu)
         copyto_sync!([XtX, Xtz], [d_cu.XtX_p, d_cu.Xtz_p])
     end
+    if d.approxhess 
+        # XtX ./= I
+    end
+    # println(minimum([det(XtX[:, :, j]) for j in 1:J]))
+    # println(minimum([tr(XtX[:, :, j]) for j in 1:J]))
 
+    # println(maximum([det(XtX[:, :, j]) for j in 1:J]))
+    # println(minimum([tr(XtX[:, :, j]) for j in 1:J]))
+
+
+    # println(tr(abs.(XtX[:, :, 1])))
     # solve quadratic programming problems.
     @time begin       
         Xtz .*= -1 
@@ -259,13 +315,37 @@ function update_p!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=not
             quadratic_program!(pdiff_, tableau_k1, p_, pmin, pmax, K, 0,
                 tmp_k1, tmp_k1_, swept)
         end
-        @turbo for j in 1:J
-            for k in 1:K
-                p_next[k, j] = p[k, j] + pdiff[k, j]
+
+        ll_prev = if d_cu !== nothing
+            copyto_sync!([d_cu.p, d_cu.q], [p, q])
+            loglikelihood(d_cu, g_cu)
+        else
+            loglikelihood(g, q, p, qp_small, K, true)
+        end
+        println(ll_prev)
+        alpha = one(T)
+
+        while true
+            @turbo for j in 1:J
+                for k in 1:K
+                    p_next[k, j] = p[k, j] + alpha * pdiff[k, j]
+                end
+            end
+            # p_next .= f .+ fdiff
+            project_p!(p_next)
+            # println(maximum(abs.(fdiff)))
+            ll_new = if d_cu !== nothing
+                copyto_sync!([d_cu.p, d_cu.q], [p_next, q])
+                loglikelihood(d_cu, g_cu)
+            else
+                loglikelihood(g, q, p_next, qp_small, K, true)
+            end
+            if ll_new < ll_prev
+                alpha *= 0.5
+                println("p: ", alpha)
+            else
+                break
             end
         end
-        # p_next .= f .+ fdiff
-        project_p!(p_next)
-        # println(maximum(abs.(fdiff)))
     end
 end

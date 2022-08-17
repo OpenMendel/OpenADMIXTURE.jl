@@ -648,27 +648,22 @@ Compute gradient and hessian of loglikelihood w.r.t. `q`, compute local `qp` on-
     end
 end
 
-@inline function update_q_loop_gradonly!(XtX, Xtz, g::AbstractArray{T}, q, p, qp_small::AbstractArray{T}, irange, jrange, K) where T
+@inline function update_q_loop_gradonly!(XtX, Xtz, tmp_grad, g::AbstractArray{T}, q, p, qp_small::AbstractArray{T}, irange, jrange, K) where T
     oneT = one(T)
     twoT = 2one(T)
     firsti, firstj = first(irange), first(jrange)
     tid = threadid()
     qp_block!(qp_small, q, p, irange, jrange, K)
-    @turbo for j in jrange
-        for i in irange
+    @inbounds for i in irange
+        for j in jrange
             gij = g[i, j]
             nonmissing = (gij == gij)
             for k in 1:K
-                Xtz[k, i] += nonmissing ? (gij * p[k, j] / qp_small[i-firsti+1, j-firstj+1, tid] + 
-                    (twoT - gij) * (oneT - p[k, j]) / (oneT - qp_small[i-firsti+1, j-firstj+1, tid])) : zero(T)
+                tmp_grad[k] = nonmissing ? (gij * p[k, j] / qp_small[i-firsti+1, j-firstj+1, tid] + 
+                (twoT - gij) * (oneT - p[k, j]) / (oneT - qp_small[i-firsti+1, j-firstj+1, tid])) : zero(T)
+                Xtz[k, i] += tmp_grad[k]
             end
-        end
-    end
-    @turbo for i in irange
-        for k in 1:K
-            for k2 in 1:K
-                XtX[k2, k, i] = - Xtz[k, i] * Xtz[k2, i]
-            end
+            @views BLAS.ger!(oneT, tmp_grad, tmp_grad, XtX[:, :, i])                
         end
     end
 end
@@ -710,27 +705,24 @@ Compute gradient and hessian of loglikelihood w.r.t. `p`, compute local `qp` on-
     end
 end
 
-@inline function update_p_loop_gradonly!(XtX, Xtz, g::AbstractArray{T}, q, p, qp_small::AbstractArray{T}, irange, jrange, K) where T
+@inline function update_p_loop_gradonly!(XtX, Xtz, tmp_grad, g::AbstractArray{T}, q, p, qp_small::AbstractArray{T}, irange, jrange, K) where T
     oneT = one(T)
     twoT = 2one(T)
     firsti, firstj = first(irange), first(jrange)
     tid = threadid()
     qp_block!(qp_small, q, p, irange, jrange, K)
-    @turbo for j in jrange
+    @inbounds for j in jrange
         for i in irange
             gij = g[i, j]
             nonmissing =  (gij == gij)
             for k in 1:K
-                Xtz[k, j] += nonmissing ? (gij * q[k, i] / qp_small[i-firsti+1, j-firstj+1, tid] - 
-                        (twoT - gij) * q[k, i] / (oneT - qp_small[i-firsti+1, j-firstj+1, tid])) : zero(T)
+                tmp_grad[k] = nonmissing ? (gij * q[k, i] / qp_small[i-firsti+1, j-firstj+1, tid] - 
+                    (twoT - gij) * q[k, i] / (oneT - qp_small[i-firsti+1, j-firstj+1, tid])) : zero(T)
+                Xtz[k, j] += tmp_grad[k]
+                # XtX[k, k, j] += nonmissing ? (gij / (qp_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * q[k, i] * q[k, i] + 
+                #         (twoT - gij) / (oneT - qp_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * q[k, i] * q[k, i]) : zero(T)
             end
-        end
-    end
-    @turbo for j in jrange
-        for k in 1:K
-            for k2 in 1:K
-                XtX[k2, k, j] = - Xtz[k, j] * Xtz[k2, j]
-            end
+            @views BLAS.ger!(oneT, tmp_grad, tmp_grad, XtX[:, :, j])
         end
     end
 end
@@ -764,7 +756,7 @@ end
     end
 end
 
-@inline function update_q_loop_gradonly!(XtX, Xtz, g::SnpLinAlg{T}, q, p, qp_small::AbstractArray{T}, irange, jrange, K) where T
+@inline function update_q_loop_gradonly!(XtX, Xtz, tmp_grad, g::SnpLinAlg{T}, q, p, qp_small::AbstractArray{T}, irange, jrange, K) where T
     oneT = one(T)
     twoT = 2one(T)
     gmat = g.s.data
@@ -773,8 +765,8 @@ end
     qp_block!(qp_small, q, p, irange, jrange, K)
     g_map = T == Float64 ? g_map_Float64 : g_map_Float32
     nonmissing_map = T == Float64 ? nonmissing_map_Float64 : nonmissing_map_Float32
-    @turbo for j in jrange
-        for i in irange
+    @inbounds for i in irange
+        for j in jrange
             blk = gmat[(i - 1) >> 2 + 1, j]
             re = (i - 1) % 4
             blk_shifted  = blk >> (re << 1)
@@ -782,16 +774,13 @@ end
             gij = g_map[gij_pre + 0x01]
             nonmissing = nonmissing_map[gij_pre + 0x01]
             for k in 1:K
-                Xtz[k, i] += nonmissing * (gij * p[k, j] / qp_small[i-firsti+1, j-firstj+1, tid] + 
+                tmp_grad[k] = nonmissing * (gij * p[k, j] / qp_small[i-firsti+1, j-firstj+1, tid] + 
                     (twoT - gij) * (oneT - p[k, j]) / (oneT - qp_small[i-firsti+1, j-firstj+1, tid]))
+                Xtz[k, i] += tmp_grad[k]
+                # XtX[k, k, i] += nonmissing * (gij / (qp_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * p[k, j] * p[k, j] + 
+                #     (twoT - gij) / (oneT - qp_small[i-firsti+1, j-firstj+1, tid]) ^ 2 * (oneT - p[k, j]) * (oneT - p[k, j]))
             end
-        end
-    end
-    @turbo for i in irange
-        for k in 1:K
-            for k2 in 1:K
-                XtX[k2, k, i] = - Xtz[k, i] * Xtz[k2, i]
-            end
+            @views BLAS.ger!(oneT, tmp_grad, tmp_grad, XtX[:, :, i])    
         end
     end
 end
@@ -825,7 +814,7 @@ function update_p_loop_skipmissing!(XtX, Xtz, g::SnpLinAlg{T}, q, p, qp_small::A
     end
 end
 
-function update_p_loop_gradonly!(XtX, Xtz, g::SnpLinAlg{T}, q, p, qp_small::AbstractArray{T}, irange, jrange, K) where T
+function update_p_loop_gradonly!(XtX, Xtz, tmp_grad, g::SnpLinAlg{T}, q, p, qp_small::AbstractArray{T}, irange, jrange, K) where T
     oneT = one(T)
     twoT = 2one(T)
     gmat = g.s.data
@@ -834,7 +823,7 @@ function update_p_loop_gradonly!(XtX, Xtz, g::SnpLinAlg{T}, q, p, qp_small::Abst
     qp_block!(qp_small, q, p, irange, jrange, K)
     g_map = T == Float64 ? g_map_Float64 : g_map_Float32
     nonmissing_map = T == Float64 ? nonmissing_map_Float64 : nonmissing_map_Float32
-    @turbo for j in jrange
+    @inbounds for j in jrange
         for i in irange
             blk = gmat[(i - 1) >> 2 + 1, j]
             re = (i - 1) % 4
@@ -843,16 +832,12 @@ function update_p_loop_gradonly!(XtX, Xtz, g::SnpLinAlg{T}, q, p, qp_small::Abst
             gij = g_map[gij_pre + 0x01]
             nonmissing = nonmissing_map[gij_pre + 0x01]
             for k in 1:K
-                Xtz[k, j] += nonmissing * (gij * q[k, i] / qp_small[i-firsti+1, j-firstj+1, tid] - 
-                        (twoT - gij) * q[k, i] / (oneT - qp_small[i-firsti+1, j-firstj+1, tid]))
+                tmp_grad[k] = nonmissing * (gij * q[k, i] / qp_small[i-firsti+1, j-firstj+1, tid] - 
+                    (twoT - gij) * q[k, i] / (oneT - qp_small[i-firsti+1, j-firstj+1, tid]))
+                Xtz[k, j] += tmp_grad[k]
+
             end
-        end
-    end
-    @turbo for j in jrange
-        for k in 1:K
-            for k2 in 1:K
-                XtX[k2, k, j] = - Xtz[k, j] * Xtz[k2, j]
-            end
+            @views BLAS.ger!(oneT, tmp_grad, tmp_grad, XtX[:, :, j])
         end
     end
 end
