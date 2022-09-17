@@ -32,7 +32,8 @@ function run_admixture(filename, K;
     sparsity=nothing, 
     prefix=filename[1:end-4],
     skfr_tries = 1, 
-    skfr_max_inner_iter=50, 
+    skfr_max_inner_iter=50,
+    skfr_mode=:global, 
     admix_n_iter=1000, 
     admix_rtol=1e-7, 
     admix_n_em_iters = 5, 
@@ -41,8 +42,15 @@ function run_admixture(filename, K;
     use_gpu=false)
     @assert endswith(filename, ".bed") "filename should end with .bed"
     if sparsity !== nothing
+        ftn = if skfr_mode == :global
+            SKFR.sparsekmeans1
+        elseif skfr_mode == :local
+            SKFR.sparsekmeans2
+        else
+            @assert false "skfr_mode can only be :global or :local"
+        end
         admix_input, clusters, aims = _filter_SKFR(filename, K, sparsity; rng=rng, prefix=prefix, 
-            tries=skfr_tries, max_inner_iter=skfr_max_inner_iter)
+            tries=skfr_tries, max_inner_iter=skfr_max_inner_iter, ftn=ftn)
     else
         admix_input = filename
         clusters, aims = nothing, nothing
@@ -60,14 +68,16 @@ function _filter_SKFR(filename, K, sparsity::Integer;
     rng=Random.GLOBAL_RNG,
     prefix=filename[1:end-4],
     tries = 10,
-    max_inner_iter = 50)
+    max_inner_iter = 50, 
+    ftn = SKFR.sparsekmeans1)
     @assert endswith(filename, ".bed") "filename should end with .bed"
     g = SnpArray(filename)
     ISM = SKFR.ImputedSnpMatrix{Float64}(g, K; rng=rng)
     if tries == 1
-        (clusters, _, aims, _, _) = SKFR.sparsekmeans1(ISM, sparsity; max_iter = max_inner_iter, squares=false)
+        (clusters, _, aims, _, _) = ftn(ISM, sparsity; max_iter = max_inner_iter, squares=false)
     else
-        (clusters, _, aims, _, _, _) = SKFR.sparsekmeans_repeat(ISM, sparsity; iter = tries, max_inner_iter=max_inner_iter)
+        (clusters, _, aims, _, _, _) = SKFR.sparsekmeans_repeat(ISM, sparsity; iter = tries, 
+            max_inner_iter=max_inner_iter, ftn=ftn)
     end
     I, J = size(g)
     aims_sorted = sort(aims)
