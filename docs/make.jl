@@ -1,4 +1,4 @@
-# using OpenADMIXTURE
+using OpenADMIXTURE
 using Documenter
 
 makedocs(;
