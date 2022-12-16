@@ -67,13 +67,14 @@ jobs:
           julia --project=docs -e '
             using Pkg
             Pkg.add("Documenter")
+            Pkg.add("https://github.com/kose-y/SKFR.jl")
+            Pkg.develop(PackageSpec(path=pwd())) # Was before instantiate() 
             Pkg.instantiate()'
-#       - run: |
-#           julia --project=docs -e '
-#             Pkg.develop(PackageSpec(path=pwd())) # Was before instantiate() 
-#             using Documenter: doctest
-#             using OpenADMIXTURE
-#             doctest(OpenADMIXTURE)'
+      - run: |
+          julia --project=docs -e '
+            using Documenter: doctest
+            using OpenADMIXTURE
+            doctest(OpenADMIXTURE)'
       - run: julia --project=docs docs/make.jl
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
