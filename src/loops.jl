@@ -594,7 +594,7 @@ end
     end
 end
 
-@inline function em_p_loop!(f_next, g::AbstractArray{T}, q, p, p_tmp, qp_small::AbstractArray{T}, irange, jrange, K) where T
+@inline function em_p_loop!(p_next, g::AbstractArray{T}, q, p, p_tmp, qp_small::AbstractArray{T}, irange, jrange, K) where T
     firsti, firstj = first(irange), first(jrange)
     tid = threadid()
     qp_block!(qp_small, q, p, irange, jrange, K)
@@ -603,7 +603,7 @@ end
             gij = g[i, j]
             for k in 1:K
                 p_tmp[k, j] += gij * q[k, i] * p[k, j] / qp_small[i-firsti+1, j-firstj+1, tid]
-                f_next[k, j] += (2 - gij) * q[k, i] * (one(T) - p[k, j]) / (one(T) - qp_small[i-firsti+1, j-firstj+1, tid])
+                p_next[k, j] += (2 - gij) * q[k, i] * (one(T) - p[k, j]) / (one(T) - qp_small[i-firsti+1, j-firstj+1, tid])
             end
         end
     end

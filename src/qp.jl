@@ -8,12 +8,20 @@ and upper bounds.
 function create_tableau!(tableau::AbstractMatrix{T}, 
     matrix_q::AbstractMatrix{T}, r::AbstractVector{T}, x::AbstractVector{T},
     v::AbstractMatrix{T}, tmp_k::AbstractVector{T},
-    simplex::Bool) where T
+    simplex::Bool, p_double::Bool=false; 
+    tmp_4k_k::Union{Nothing, AbstractMatrix{T}}=nothing, 
+    tmp_4k_k_2::Union{Nothing, AbstractMatrix{T}}=nothing) where T
     #matrix_a::AbstractMatrix{T}, b::AbstractVector{T}, x::AbstractVector{T}) where T
-
+    @assert !(simplex && p_double) "Only one of simplex and p_double can be true."
+    fill!(tableau, zero(T))
     K = size(matrix_q, 1)
+    if p_double 
+        K ÷= 4 
+    end
     if simplex
         @assert size(tableau) == (K + 2, K + 2)
+    elseif p_double
+        @assert size(tableau) == (5K + 1, 5K + 1)
     else
         @assert size(tableau) == (K + 1, K + 1)
     end
@@ -21,20 +29,20 @@ function create_tableau!(tableau::AbstractMatrix{T},
     #
     # Create the tableau in the absence of constraints.
     #
-    @turbo for j in 1:K
-        for i in 1:K
+    @turbo for j in 1:(p_double ? 4K : K)
+        for i in 1:(p_double ? 4K : K)
             tableau[i, j] = matrix_q[i, j]
         end
     end
-    @turbo for i in 1:K
+    @turbo for i in 1:(p_double ? 4K : K)
         tableau[sz, i] = -r[i]
         tableau[i, sz] = -r[i]
     end
     tableau[sz, sz] = zero(T)
-    if !simplex
+    if !simplex && !p_double
         return tableau
         #tableau = [matrix_q (-r); -r' 0]
-    else
+    elseif simplex
     #
     # In the presence of constraints compute a constant mu via
     # the Gerschgorin circle theorem so that Q + mu * A' * A
@@ -50,18 +58,62 @@ function create_tableau!(tableau::AbstractMatrix{T},
         #
         # Now create the tableau.
         #
+        # add mu * A' * A
         @turbo for j in 1:K
             for i in 1:K
                 tableau[i, j] += mu
             end
         end
+        # A
         @inbounds for i in 1:K
             tableau[K+1, i] = one(T)
             tableau[i, K+1] = one(T)
         end
+        # b - A * x
         tableau[K+1, K+1] = zero(T)
         tableau[K+2, K+1] = tableau[K+1, K+2] = one(T) - sum(x)
         tableau[K+2, K+2] = zero(T)
+    else # p_double
+        # matrix_q: 4K x 4K. 
+        # compute mu
+        #
+        # (matrix_u, d, matrix_v) = svd(matrix_a, full = true) (precomputed)
+        # matrix_p = v * matrix_q * v'
+        mul!(tmp_4k_k, matrix_q, transpose(@view(v[1:K, :])))
+        mul!(tmp_4k_k_2, v, tmp_4k_k)
+        mu = zero(T)
+        for i = 1:K
+            mu = max((norm(tmp_4k_k_2[:, i], 1) - 2.0 * tmp_4k_k_2[i, i]) / 4, mu)
+        end
+        mu = 2mu
+        # fill the rest
+        # add mu * A' * A
+        for l2 in 1:4
+            for l in 1:4
+                for k in 1:K
+                    tableau[(l-1) * K + k, (l2-1) * K + k] += mu
+                end
+            end
+        end
+
+        # A
+        for l in 1:4
+            for k in 1:K
+                tableau[4K + k, (l-1) * K + k] += 1
+                tableau[(l-1) * K + k, 4K + k] += 1
+            end
+        end
+
+        # b - A * x
+        tableau[4K+1:5K, 5K+1] .= one(T)
+        for l in 1:4
+            for k in 1:K
+                tableau[4K+k, 5K+1] -= x[(l-1)*K + k]
+            end
+        end
+        for k in 1:K
+            tableau[5K+1, 4K+k] = tableau[4K+k, 5K+1]
+        end
     end
     return tableau
 end # function create_tableau!

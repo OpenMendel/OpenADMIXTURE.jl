@@ -1,7 +1,7 @@
 function project_q!(b::AbstractMatrix{T}, idx::AbstractVector{Int}; pseudocount=T(1e-5)) where T
     I = size(b, 2)
     @inbounds for i in 1:I
-        project_q!(@view(b[:, i]), idx)
+        project_q!(@view(b[:, i]), idx; pseudocount=pseudocount)
     end
     b
 end
