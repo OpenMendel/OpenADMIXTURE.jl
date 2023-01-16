@@ -67,7 +67,8 @@ jobs:
           julia --project=docs -e '
             using Pkg
             Pkg.add("Documenter")
-            Pkg.develop(PackageSpec(path=pwd()))
+            Pkg.add(url="https://github.com/kose-y/SKFR.jl", rev="master")
+            Pkg.develop(PackageSpec(path=pwd())) # Was before instantiate() 
             Pkg.instantiate()'
       - run: |
           julia --project=docs -e '
