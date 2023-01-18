@@ -83,7 +83,7 @@ function create_tableau!(tableau::AbstractMatrix{T},
         mul!(tmp_4k_k_2, v, tmp_4k_k)
         mu = zero(T)
         for i = 1:K
-            mu = max((norm(@view(tmp_4k_k_2[:, i]), 1) - 2.0 * tmp_4k_k_2[i, i]) / 4, mu)
+            mu = max((norm((tmp_4k_k_2[:, i]), 1) - 2.0 * tmp_4k_k_2[i, i]) / 4, mu)
         end
         mu = 2mu
         # fill the rest
