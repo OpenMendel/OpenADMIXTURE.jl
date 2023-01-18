@@ -36,29 +36,7 @@ using LinearAlgebra, Random, SnpArrays
 using OpenADMIXTURE
 using CSV, DelimitedFiles
 
-d, _, _ = OpenAdmixture.run_admixture(filename, 4; T=Float64, use_gpu=true, rng=MersenneTwister(7856))
-
 ```
-
-
-    UndefVarError: OpenAdmixture not defined
-
-    
-
-    Stacktrace:
-
-     [1] top-level scope
-
-       @ In[1]:5
-
-     [2] eval
-
-       @ ./boot.jl:373 [inlined]
-
-     [3] include_string(mapexpr::typeof(REPL.softscope), mod::Module, code::String, filename::String)
-
-       @ Base ./loading.jl:1196
-
 
 We will use the PLINK file included in the `SnpArrays` package, whose path is obtained by:
 
