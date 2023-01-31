@@ -83,7 +83,7 @@ function create_tableau!(tableau::AbstractMatrix{T},
         mul!(tmp_4k_k_2, v, tmp_4k_k)
         mu = zero(T)
         for i = 1:K
-            mu = max((norm((tmp_4k_k_2[:, i]), 1) - 2.0 * tmp_4k_k_2[i, i]) / 4, mu)
+            mu = max((norm(@view(tmp_4k_k_2[:, i]), 1) - 2.0 * tmp_4k_k_2[i, i]) / 4, mu)
         end
         mu = 2mu
         # fill the rest
@@ -111,6 +111,7 @@ function create_tableau!(tableau::AbstractMatrix{T},
                 tableau[4K+k, 5K+1] -= x[(l-1)*K + k]
             end
         end
+        tableau[4K+1:5K, 5K+1] .= max.(zero(T), @view(tableau[4K+1:5K, 5K+1]))
         for k in 1:K
             tableau[5K+1, 4K+k] = tableau[4K+k, 5K+1]
         end
@@ -162,8 +163,7 @@ North Carolina State University.
 """
 function quadratic_program!(delta::AbstractVector{T}, tableau::AbstractMatrix{T}, par::AbstractVector{T},
     pmin::AbstractVector{T}, pmax::AbstractVector{T}, p::Int, c::Int, d::AbstractVector{T}, 
-    tmp::AbstractVector{T}, swept::AbstractVector{Bool}) where T
-
+    tmp::AbstractVector{T}, swept::AbstractVector{Bool}; verbose=false) where T
     # delta = zeros(T, size(par))
     fill!(delta, zero(T))
     #
@@ -196,6 +196,9 @@ function quadratic_program!(delta::AbstractVector{T}, tableau::AbstractMatrix{T}
             sweep!(tableau, i, tmp, false)
         end
     end
+    if any(isnan.(tableau))
+        throw(error("NaN emerged before"))
+    end
     #
     # Take a step in the direction tableau(i, end) for the parameters i
     # that are currently swept. If a boundary is encountered, determine
@@ -217,6 +220,10 @@ function quadratic_program!(delta::AbstractVector{T}, tableau::AbstractMatrix{T}
                 end
             end
         end
+
+        if any(isnan.(tableau))
+            throw(error("NaN emerged 1"))
+        end
         #
         # Take the fractional step for the currently swept parameters, and
         # reset the transformed partial derivatives for these parameters.
@@ -228,6 +235,9 @@ function quadratic_program!(delta::AbstractVector{T}, tableau::AbstractMatrix{T}
                 tableau[i, end] = (one(T) - a) * ui
                 tableau[end, i] = tableau[i, end]
             end
+        end
+        if any(isnan.(tableau))
+            throw(error("NaN emerged 2"))
         end
         #
         # Find a swept parameter that is critical, and inverse sweep it.
@@ -244,6 +254,12 @@ function quadratic_program!(delta::AbstractVector{T}, tableau::AbstractMatrix{T}
                 break
             end
         end
+        if any(isnan.(tableau))
+            throw(error("NaN emerged 3"))
+        end
+        if verbose
+            println(tableau)
+        end
         if cycle_main_loop; continue; end
         #
         # Find an unswept parameter that violates the KKT condition
@@ -251,15 +267,34 @@ function quadratic_program!(delta::AbstractVector{T}, tableau::AbstractMatrix{T}
         # If no such parameter exists, then the problem is solved.
         #
         for i = 1:p
-        ui = tableau[i, end]
-        violation = ui > zero(T) && pmin[i] >= par[i] + delta[i] - small
-        violation = violation || (ui < zero(T) && pmax[i]<= par[i] + delta[i] + small)
-        if !swept[i] && violation
-            sweep!(tableau, i, tmp, false)
-            swept[i] = true
-            cycle_main_loop = true
-            break
+            ui = tableau[i, end]
+            violation = ui > zero(T) && pmin[i] >= par[i] + delta[i] - small
+            violation = violation || (ui < zero(T) && pmax[i]<= par[i] + delta[i] + small)
+            if verbose
+                println(violation)
+            end
+            if !swept[i] && violation
+                if verbose
+                    println(i)
+                end
+                sweep!(tableau, i, tmp, false)
+                swept[i] = true
+                cycle_main_loop = true
+                break
+            end
+            if verbose
+                println(i)
+                println(sum(tableau))
+            end
         end
+        if verbose
+            println(cycle_main_loop)
+            println(sum(isnan.(tableau)))
+        end
+
+        if any(isnan.(tableau))
+            println(tableau)
+            throw(error("NaN emerged 4"))
         end
         if cycle_main_loop; continue; end
         return iteration
