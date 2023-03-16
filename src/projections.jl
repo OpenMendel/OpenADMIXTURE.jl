@@ -6,6 +6,24 @@ function project_q!(b::AbstractMatrix{T}, idx::AbstractVector{Int}; pseudocount=
     b
 end
 
+function qsortperm!(idx, a,lo,hi)
+    i, j = lo, hi
+    while i < hi
+        pivot = idx[(lo+hi) ÷ 2]
+        while i <= j
+            while a[idx[i]] > a[pivot]; i = i+1; end
+            while a[idx[j]] < a[pivot]; j = j-1; end
+            if i <= j
+                idx[i], idx[j] = idx[j], idx[i]
+                i, j = i+1, j-1
+            end
+        end
+        if lo < j; qsortperm!(idx,a,lo,j); end
+        lo, j = i, hi
+    end
+    return idx
+end
+
 """
     project_q!(b, idx; pseudocount=1e-5)
 Project the Q matrix onto the probability simplex.
@@ -16,7 +34,13 @@ function project_q!(b::AbstractVector{T}, idx::AbstractVector{Int}; pseudocount=
     b .-= pseudocount
     bget = false
 
-    sortperm!(idx, b, rev=true) # this allocates something
+    @assert length(b) == length(idx)
+    
+    @inbounds for i in 1:length(idx)
+        idx[i] = i
+    end
+    qsortperm!(idx, b, 1, length(idx))
+    # sortperm!(idx, b, rev=true) # this allocates something
     tsum = zero(T)
 
     @inbounds for i = 1:n-1

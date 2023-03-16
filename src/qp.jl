@@ -10,7 +10,8 @@ function create_tableau!(tableau::AbstractMatrix{T},
     v::AbstractMatrix{T}, tmp_k::AbstractVector{T},
     simplex::Bool, p_double::Bool=false; 
     tmp_4k_k::Union{Nothing, AbstractMatrix{T}}=nothing, 
-    tmp_4k_k_2::Union{Nothing, AbstractMatrix{T}}=nothing) where T
+    tmp_4k_k_2::Union{Nothing, AbstractMatrix{T}}=nothing,
+    verbose=false) where T
     #matrix_a::AbstractMatrix{T}, b::AbstractVector{T}, x::AbstractVector{T}) where T
     @assert !(simplex && p_double) "Only one of simplex and p_double can be true."
     fill!(tableau, zero(T))
@@ -85,7 +86,10 @@ function create_tableau!(tableau::AbstractMatrix{T},
         for i = 1:K
             mu = max((norm(@view(tmp_4k_k_2[:, i]), 1) - 2.0 * tmp_4k_k_2[i, i]) / 4, mu)
         end
-        mu = 2mu
+        mu = T(2.5 * mu)
+        if verbose
+            println("mu: $mu")
+        end
         # fill the rest
         # add mu * A' * A
         for l2 in 1:4
@@ -95,6 +99,14 @@ function create_tableau!(tableau::AbstractMatrix{T},
                 end
             end
         end
+
+        for l2 in 1:4
+            for l in 1:4
+                for k in 1:K
+                    tableau[(l-1) * K + k, (l2-1) * K + k] += mu
+                end
+            end
+        end        
 
         # A
         for l in 1:4
@@ -115,6 +127,9 @@ function create_tableau!(tableau::AbstractMatrix{T},
         for k in 1:K
             tableau[5K+1, 4K+k] = tableau[4K+k, 5K+1]
         end
+    end
+    if verbose
+        println(tableau)
     end
     return tableau
 end # function create_tableau!
@@ -196,9 +211,6 @@ function quadratic_program!(delta::AbstractVector{T}, tableau::AbstractMatrix{T}
             sweep!(tableau, i, tmp, false)
         end
     end
-    if any(isnan.(tableau))
-        throw(error("NaN emerged before"))
-    end
     #
     # Take a step in the direction tableau(i, end) for the parameters i
     # that are currently swept. If a boundary is encountered, determine
@@ -206,6 +218,9 @@ function quadratic_program!(delta::AbstractVector{T}, tableau::AbstractMatrix{T}
     #
     cycle_main_loop = false
     for iteration = 1:1000
+        if verbose
+            println(swept)
+        end
         a = one(T)
         for i = 1:p
             if swept[i]
@@ -221,9 +236,6 @@ function quadratic_program!(delta::AbstractVector{T}, tableau::AbstractMatrix{T}
             end
         end
 
-        if any(isnan.(tableau))
-            throw(error("NaN emerged 1"))
-        end
         #
         # Take the fractional step for the currently swept parameters, and
         # reset the transformed partial derivatives for these parameters.
@@ -236,9 +248,7 @@ function quadratic_program!(delta::AbstractVector{T}, tableau::AbstractMatrix{T}
                 tableau[end, i] = tableau[i, end]
             end
         end
-        if any(isnan.(tableau))
-            throw(error("NaN emerged 2"))
-        end
+
         #
         # Find a swept parameter that is critical, and inverse sweep it.
         # Go back and try to take another step or fractional step.
@@ -248,18 +258,18 @@ function quadratic_program!(delta::AbstractVector{T}, tableau::AbstractMatrix{T}
             critical = pmin[i] >= par[i] + delta[i] - small
             critical = critical || pmax[i]<= par[i] + delta[i] + small
             if swept[i] && abs(tableau[i, i])>1e-10 && critical
+                if verbose
+                    println("unsweeping: $i")
+                    println("est: $(par[i]) + $(delta[i]) = $(par[i] + delta[i])")
+                    println("diagonal: $(tableau[i, i])")
+                end
                 sweep!(tableau, i, tmp, true)
                 swept[i] = false
                 cycle_main_loop = true
                 break
             end
         end
-        if any(isnan.(tableau))
-            throw(error("NaN emerged 3"))
-        end
-        if verbose
-            println(tableau)
-        end
+
         if cycle_main_loop; continue; end
         #
         # Find an unswept parameter that violates the KKT condition
@@ -270,32 +280,19 @@ function quadratic_program!(delta::AbstractVector{T}, tableau::AbstractMatrix{T}
             ui = tableau[i, end]
             violation = ui > zero(T) && pmin[i] >= par[i] + delta[i] - small
             violation = violation || (ui < zero(T) && pmax[i]<= par[i] + delta[i] + small)
-            if verbose
-                println(violation)
-            end
             if !swept[i] && violation
                 if verbose
-                    println(i)
+                    println("sweeping: $i")
+                    println("ui: $ui, est: $(par[i]) + $(delta[i]) = $(par[i] + delta[i]))")
+                    println("diagonal: $(tableau[i, i])")
                 end
                 sweep!(tableau, i, tmp, false)
                 swept[i] = true
                 cycle_main_loop = true
                 break
             end
-            if verbose
-                println(i)
-                println(sum(tableau))
-            end
         end
-        if verbose
-            println(cycle_main_loop)
-            println(sum(isnan.(tableau)))
-        end
-
-        if any(isnan.(tableau))
-            println(tableau)
-            throw(error("NaN emerged 4"))
-        end
+        
         if cycle_main_loop; continue; end
         return iteration
     end
