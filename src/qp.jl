@@ -100,14 +100,6 @@ function create_tableau!(tableau::AbstractMatrix{T},
             end
         end
 
-        for l2 in 1:4
-            for l in 1:4
-                for k in 1:K
-                    tableau[(l-1) * K + k, (l2-1) * K + k] += mu
-                end
-            end
-        end        
-
         # A
         for l in 1:4
             for k in 1:K
