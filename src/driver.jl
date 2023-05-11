@@ -8,7 +8,10 @@
         admix_n_iter = 1000,
         admix_rtol=1e-7,
         admix_n_em_iter = 5,
-        T = Float64, Q = 3, use_gpu=false)
+        T = Float64,
+        Q = 3,
+        use_gpu=false,
+        verbose=false)
 
 The main runner function for admixture. 
 
@@ -39,7 +42,8 @@ function run_admixture(filename, K;
     admix_n_em_iters = 5, 
     T=Float64, 
     Q=3, 
-    use_gpu=false)
+    use_gpu=false,
+    verbose=false)
     @assert endswith(filename, ".bed") "filename should end with .bed"
     if sparsity !== nothing
         ftn = if skfr_mode == :global
@@ -57,7 +61,7 @@ function run_admixture(filename, K;
     end
     d = _admixture_base(admix_input, K; 
         n_iter=admix_n_iter, rtol=admix_rtol, rng=rng, em_iters=admix_n_em_iters, 
-        T=T, Q=Q, use_gpu=use_gpu)
+        T=T, Q=Q, use_gpu=use_gpu, verbose=verbose)
     d, clusters, aims
 end
 
@@ -120,7 +124,8 @@ function _admixture_base(filename, K;
     em_iters = 5, 
     T=Float64, 
     Q=3, 
-    use_gpu=false)
+    use_gpu=false,
+    verbose=false)
     g = SnpArray(filename)
     g_la = SnpLinAlg{T}(g)
     I = size(g_la, 1)
@@ -132,8 +137,17 @@ function _admixture_base(filename, K;
         d_cu = nothing
         g_cu = nothing
     end
-    @time init_em!(d, g_la, em_iters; d_cu = d_cu, g_cu=g_cu)
-    @time admixture_qn!(d, g_la, n_iter, rtol; d_cu = d_cu, g_cu = g_cu, mode=:ZAL)
+    if verbose
+        @time init_em!(d, g_la, em_iters;
+                       d_cu = d_cu, g_cu=g_cu, verbose=verbose)
+        @time admixture_qn!(d, g_la, n_iter, rtol;
+                            d_cu = d_cu, g_cu = g_cu, mode=:ZAL,
+                            verbose=verbose)
+    else
+        init_em!(d, g_la, em_iters; d_cu = d_cu, g_cu=g_cu)
+        admixture_qn!(d, g_la, n_iter, rtol;
+                      d_cu = d_cu, g_cu = g_cu, mode=:ZAL)
+    end
     d
 end
 

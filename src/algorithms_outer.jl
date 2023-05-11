@@ -9,18 +9,32 @@ Initialize P and Q with the FRAPPE EM algorithm
 - `d_cu`: a `CuAdmixData` if using GPU, `nothing` otherwise.
 - `g_cu`: a `CuMatrix{UInt8}` corresponding to the data part of 
 """
-function init_em!(d::AdmixData{T}, g::AbstractArray{T}, iter::Integer; d_cu=nothing, g_cu=nothing) where T
+function init_em!(d::AdmixData{T}, g::AbstractArray{T}, iter::Integer;
+                  d_cu=nothing, g_cu=nothing, verbose=false) where T
     # qf!(d.qf, d.q, d.f)
     if d_cu !== nothing
         copyto_sync!([d_cu.q, d_cu.p], [d.q, d.p])
     end
     d_ = (d_cu === nothing) ? d : d_cu
     g_ = (g_cu === nothing) ? g : g_cu
-    for _ in 1:iter
-        em_q!(d_, g_)
-        em_p!(d_, g_)
-        d_.p .= d_.p_next
-        d_.q .= d_.q_next
+    println("Performing $iter EM steps for priming")
+    for i in 1:iter
+        if verbose
+            println("Initialization EM Iteration $(i)")
+        end
+        t = @timed begin
+            em_q!(d_, g_; verbose=verbose)
+            em_p!(d_, g_; verbose=verbose)
+            d_.p .= d_.p_next
+            d_.q .= d_.q_next
+        end
+        if d_cu !== nothing
+            copyto_sync!([d.p, d.q], [d_cu.p, d_cu.q])
+            ll = loglikelihood(d_cu, g_cu)
+        else
+            ll = loglikelihood(g, d.q, d.p, d.qp_small, d.K, d.skipmissing)
+        end
+        println("EM Iteration $(i) ($(t.time) sec): Loglikelihood = $ll")
     end
     if d_cu !== nothing
         copyto_sync!([d.p, d.q], [d_cu.p, d_cu.q])
@@ -45,7 +59,8 @@ Initialize P and Q with the FRAPPE EM algorithm
 - `mode`: `:ZAL` for Zhou-Alexander-Lange acceleration (2009), `:LBQN` for Agarwal-Xu (2020). 
 """
 function admixture_qn!(d::AdmixData{T}, g::AbstractArray{T}, iter::Int=1000, 
-    rtol= 1e-7; d_cu=nothing, g_cu=nothing, mode=:ZAL, iter_count_offset=0) where T
+    rtol= 1e-7; d_cu=nothing, g_cu=nothing, mode=:ZAL, iter_count_offset=0,
+    verbose=false) where T
     # qf!(d.qf, d.q, d.f)
     # ll_prev = loglikelihood(g, d.q, d.f, d.qp_small, d.K, d.skipmissing)
     # d.ll_new = ll_prev
@@ -60,15 +75,18 @@ function admixture_qn!(d::AdmixData{T}, g::AbstractArray{T}, iter::Int=1000,
     end
 
     println("initial ll: ", d.ll_new)
-    for i in (iter_count_offset + 1):iter
-        @time begin
+    println("Starting main algorithm")
+    converged = false
+    i = 0
+    loopstats = @timed for outer i = (iter_count_offset + 1):iter
+        iterinfo = @timed begin
             # qf!(d.qf, d.q, d.f)
             # ll_prev = loglikelihood(g, d.qf)
             d.ll_prev = d.ll_new
-            update_q!(d, g; d_cu=d_cu, g_cu=g_cu)
-            update_p!(d, g; d_cu=d_cu, g_cu=g_cu)
-            update_q!(d, g, true; d_cu=d_cu, g_cu=g_cu)
-            update_p!(d, g, true; d_cu=d_cu, g_cu=g_cu)
+            update_q!(d, g; d_cu=d_cu, g_cu=g_cu, verbose=verbose)
+            update_p!(d, g; d_cu=d_cu, g_cu=g_cu, verbose=verbose)
+            update_q!(d, g, true; d_cu=d_cu, g_cu=g_cu, verbose=verbose)
+            update_p!(d, g, true; d_cu=d_cu, g_cu=g_cu, verbose=verbose)
 
             # qf!(d.qf, d.q_next2, d.f_next2)
             ll_basic = if d_cu !== nothing
@@ -109,16 +127,25 @@ function admixture_qn!(d::AdmixData{T}, g::AbstractArray{T}, iter::Int=1000,
                 d.x .= d.x_next2
                 d.ll_new = ll_basic
             end
-            println(d.ll_prev)
-            println(ll_basic)
-            println(ll_qn)
-            reldiff = abs((d.ll_new - d.ll_prev) / d.ll_prev)
-            println("Iteration $i: ll = $(d.ll_new), reldiff = $reldiff")
-            if reldiff < rtol
-                break
-            end
+            (prev = d.ll_prev, basic = ll_basic, qn = ll_qn, new = d.ll_new,
+             reldiff = abs((d.ll_new - d.ll_prev) / d.ll_prev))
         end
-        println()
-        println()
+        lls = iterinfo[1]
+        println("Iteration $i ($(iterinfo.time) sec): " *
+                "LogLikelihood = $(lls.new), reldiff = $(lls.reldiff)")
+        println("    LogLikelihoods: Previous = $(lls.prev), " *
+                "QN = $(lls.qn), Basic = $(lls.basic)")
+        if verbose
+            println("\n")
+        end
+        if lls.reldiff < rtol
+            converged = true
+            break
+        end
+    end
+    if converged
+        println("Main algorithm converged in $i iterations over $(loopstats.time) sec.")
+    else
+        println("Main algorithm failed to converge after $i iterations over $(loopstats.time) sec.")
     end
 end

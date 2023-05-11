@@ -52,7 +52,7 @@ end
 # end
 
 """
-    em_q!(d, g, mode=:base)
+    em_q!(d, g, mode=:base, verbose=false)
 FRAPPE EM algorithm for updaing Q.
 Assumes qp to be pre-computed.
 
@@ -62,9 +62,10 @@ Assumes qp to be pre-computed.
 - `mode`: selects which member of `d` is used.. 
     - `:base` or `:fallback`: `q_next` is updated based on  `q` and `p`.
     - `:fallback2`: `q_next2` is updated based on `q_next` and `p_next`.
+- `verbose`: whether to print timings (boolean)
 """
 # function em_q!(q_new, g::AbstractArray{T}, q, p, qf) where T # summation over j, block I side.
-function em_q!(d::AdmixData{T}, g::AbstractArray{T}, mode=:base) where T
+function em_q!(d::AdmixData{T}, g::AbstractArray{T}; mode=:base, verbose=false) where T
     I, J, K = d.I, d.J, d.K
     qp_small = d.qp_small
     if mode == :base || mode == :fallback
@@ -73,8 +74,15 @@ function em_q!(d::AdmixData{T}, g::AbstractArray{T}, mode=:base) where T
         q_next, q, p = d.q_next2, d.q_next, d.p_next
     end
     fill!(q_next, zero(T))
-    @time threader!(d.skipmissing ? em_q_loop_skipmissing! : em_q_loop!,
-        typeof(q_next), (q_next, g, q, p, qp_small), 1:I, 1:J, K, true; maxL=64)
+    if verbose
+        @time threader!(d.skipmissing ? em_q_loop_skipmissing! : em_q_loop!,
+                        typeof(q_next), (q_next, g, q, p, qp_small),
+                        1:I, 1:J, K, true; maxL=64)
+    else
+        threader!(d.skipmissing ? em_q_loop_skipmissing! : em_q_loop!,
+                        typeof(q_next), (q_next, g, q, p, qp_small),
+                        1:I, 1:J, K, true; maxL=64)
+    end
     # @time tiler!(d.skipmissing ? em_q_loop_skipmissing! : em_q_loop!, 
     #     typeof(q_next), (q_next, g, q, p, qp_small), 1:I, 1:J, K)
     # @time em_q_loop!(q_next, g, q, p, qp, 1:I, 1:J, K)
@@ -84,7 +92,7 @@ function em_q!(d::AdmixData{T}, g::AbstractArray{T}, mode=:base) where T
 end
 
 """
-    em_q!(d, g, mode=:base)
+    em_p!(d, g, mode=:base, verbose=false)
 FRAPPE EM algorithm for updaing P.
 Assumes qp to be pre-computed.
 
@@ -95,8 +103,9 @@ Assumes qp to be pre-computed.
     - `:base`: `p_next` is updated based on  `q` and `p`.
     - `:fallback`: `p_next` is updated based on `q_next` and `p`.
     - `:fallback2`: `p_next2` is updated based on `q_next` and `p_next`.
+- `verbose`: whether to print timings (boolean)
 """
-function em_p!(d::AdmixData{T}, g::AbstractArray{T}, mode=:base) where T 
+function em_p!(d::AdmixData{T}, g::AbstractArray{T}; mode=:base, verbose=false) where T 
     # summation over i: block J side.
     I, J, K = d.I, d.J, d.K
     p_tmp, qp_small = d.p_tmp, d.qp_small
@@ -109,9 +118,15 @@ function em_p!(d::AdmixData{T}, g::AbstractArray{T}, mode=:base) where T
     end
     fill!(p_tmp, zero(T))
     fill!(p_next, zero(T))
-
-    @time threader!(d.skipmissing ? em_p_loop_skipmissing! : em_p_loop!, 
-        typeof(p_next), (p_next, g, q, p, p_tmp, qp_small), 1:I, 1:J, K, false; maxL=64)
+    if verbose
+        @time threader!(d.skipmissing ? em_p_loop_skipmissing! : em_p_loop!, 
+                        typeof(p_next), (p_next, g, q, p, p_tmp, qp_small),
+                        1:I, 1:J, K, false; maxL=64)
+    else
+        threader!(d.skipmissing ? em_p_loop_skipmissing! : em_p_loop!, 
+                        typeof(p_next), (p_next, g, q, p, p_tmp, qp_small),
+                        1:I, 1:J, K, false; maxL=64)
+    end
     # @time tiler!(d.skipmissing ? em_f_loop_skipmissing! : em_f_loop!, 
     #     typeof(p_next), (p_next, g, q, p, f_tmp, qp_small), 1:I, 1:J, K)
     # @time em_f_loop!(p_next, g, q, p, f_tmp, qp_small, 1:I, 1:J, K)
@@ -127,8 +142,18 @@ end
 
 const tau_schedule = collect(0.7^i for i in 1:10)
 
+function print_timed(timed_results, verbose::Bool)
+    if verbose
+        allocs = timed_results.gcstats.malloc + timed_results.gcstats.realloc +
+                 timed_results.gcstats.poolalloc + timed_results.gcstats.bigalloc
+        allocd = timed_results.gcstats.allocd
+        seconds = timed_results.time
+        println("$seconds seconds ($allocs allocations: $allocd bytes)")
+    end
+end
+
 """
-    update_q!(d, g, update2=false; d_cu=nothing, g_cu=nothing)
+    update_q!(d, g, update2=false; d_cu=nothing, g_cu=nothing, verbose=false)
 Update Q using sequential quadratic programming.
 
 # Input
@@ -136,9 +161,11 @@ Update Q using sequential quadratic programming.
 - `g`: a genotype matrix.
 - `update2`: if running the second update for quasi-Newton step
 - `d_cu`: a `CuAdmixData` if using GPU, `nothing` otherwise.
-- `g_cu`: a `CuMatrix{UInt8}` corresponding to the data part of 
+- `g_cu`: a `CuMatrix{UInt8}` corresponding to the data part of
+- `verbose`: whether to print timings (boolean)
 """
-function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=nothing, g_cu=nothing) where T
+function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false;
+                   d_cu=nothing, g_cu=nothing, verbose=false) where T
 # function update_q!(q_next, g::AbstractArray{T}, q, p, qdiff, XtX, Xtz, qf) where T
     I, J, K = d.I, d.J, d.K
     qdiff, XtX, Xtz, qp_small = d.q_tmp, d.XtX_q, d.Xtz_q, d.qp_small
@@ -152,8 +179,10 @@ function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=not
 
     # qf!(qp, q, f)
     d.ll_prev = d.ll_new # loglikelihood(g, qf)
-    println(d.ll_prev)
-    @time if d_cu === nothing # CPU operation
+    if verbose
+        println(d.ll_prev)
+    end
+    a = @timed if d_cu === nothing # CPU operation
         fill!(XtX, zero(T))
         fill!(Xtz, zero(T))
         threader!(d.skipmissing ? update_q_loop_skipmissing! : update_q_loop!, 
@@ -165,8 +194,10 @@ function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=not
         copyto_sync!([XtX, Xtz], [d_cu.XtX_q, d_cu.Xtz_q])
     end
 
+    print_timed(a, verbose)
+
     # Solve the quadratic programs
-    @time begin
+    b = @timed begin
         Xtz .*= -1 
         pmin = zeros(T, K)
         pmax = ones(T, K)
@@ -196,10 +227,12 @@ function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=not
         end
         project_q!(q_next, d.idxv[1])
     end
+
+    print_timed(b, verbose)
 end
 
 """
-    update_p!(d, g, update2=false; d_cu=nothing, g_cu=nothing)
+    update_p!(d, g, update2=false; d_cu=nothing, g_cu=nothing, verbose=false)
 Update P with sequential quadratic programming.
 
 # Input
@@ -207,9 +240,12 @@ Update P with sequential quadratic programming.
 - `g`: a genotype matrix.
 - `update2`: if running the second update for quasi-Newton step
 - `d_cu`: a `CuAdmixData` if using GPU, `nothing` otherwise.
-- `g_cu`: a `CuMatrix{UInt8}` corresponding to the data part of 
+- `g_cu`: a `CuMatrix{UInt8}` corresponding to the data part of
+- `verbose`: whether to print timings (boolean)
 """
-function update_p!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=nothing, g_cu=nothing) where T
+function update_p!(d::AdmixData{T}, g::AbstractArray{T},
+                   update2=false; d_cu=nothing, g_cu=nothing,
+                   verbose=false) where T
 # function update_p!(p_next, g::AbstractArray{T}, p, q, fdiff, XtX, Xtz, qf) where T
     I, J, K = d.I, d.J, d.K
     pdiff, XtX, Xtz, qp_small = d.p_tmp, d.XtX_p, d.Xtz_p, d.qp_small
@@ -222,7 +258,7 @@ function update_p!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=not
     Xtzv   = d.Xtz_pv
 
     d.ll_prev = d.ll_new 
-    @time if d_cu === nothing # CPU operation
+    a = @timed if d_cu === nothing # CPU operation
         fill!(XtX, zero(T))
         fill!(Xtz, zero(T))
 
@@ -235,8 +271,10 @@ function update_p!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=not
         copyto_sync!([XtX, Xtz], [d_cu.XtX_p, d_cu.Xtz_p])
     end
 
+    print_timed(a, verbose)
+
     # solve quadratic programming problems.
-    @time begin       
+    b = @timed begin       
         Xtz .*= -1 
         pmin = zeros(T, K)
         pmax = ones(T, K)
@@ -268,4 +306,6 @@ function update_p!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=not
         project_p!(p_next)
         # println(maximum(abs.(fdiff)))
     end
+
+    print_timed(b, verbose)
 end
