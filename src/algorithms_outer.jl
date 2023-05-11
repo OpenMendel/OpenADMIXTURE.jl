@@ -56,15 +56,23 @@ Initialize P and Q with the FRAPPE EM algorithm
 - `rtol`: convergence tolerance in terms of relative change of loglikelihood.
 - `d_cu`: a `CuAdmixData` if using GPU, `nothing` otherwise.
 - `g_cu`: a `CuMatrix{UInt8}` corresponding to the data part of genotype matrix
-- `mode`: `:ZAL` for Zhou-Alexander-Lange acceleration (2009), `:LBQN` for Agarwal-Xu (2020). 
+- `mode`: `:ZAL` for Zhou-Alexander-Lange acceleration (2009), `:LBQN` for Agarwal-Xu (2020).
+- `verbose`: Print verbose timing information like original script.
+- `progress_bar`: Show progress bar while executing.
 """
 function admixture_qn!(d::AdmixData{T}, g::AbstractArray{T}, iter::Int=1000, 
     rtol= 1e-7; d_cu=nothing, g_cu=nothing, mode=:ZAL, iter_count_offset=0,
-    verbose=false) where T
+    verbose=false, progress_bar=false) where T
     # qf!(d.qf, d.q, d.f)
     # ll_prev = loglikelihood(g, d.q, d.f, d.qp_small, d.K, d.skipmissing)
     # d.ll_new = ll_prev
     
+    bgpartial = ['▁' ,'▂' ,'▃' ,'▄' ,'▅' ,'▆', '▇']
+    p = Progress(iter, dt=0.5, desc="Running main algorithm",
+        barglyphs=BarGlyphs('|','█', bgpartial,' ','|'),
+        barlen=50, showspeed=true, enabled=progress_bar);
+    fspec = FormatSpec(".4e")
+
     if isnan(d.ll_new)
         if d_cu !== nothing
             copyto_sync!([d_cu.p, d_cu.q], [d.p, d.q])
@@ -75,7 +83,10 @@ function admixture_qn!(d::AdmixData{T}, g::AbstractArray{T}, iter::Int=1000,
     end
 
     println("initial ll: ", d.ll_new)
-    println("Starting main algorithm")
+    if !progress_bar
+        println("Starting main algorithm")
+    end
+    llhist = [d.ll_new]
     converged = false
     i = 0
     loopstats = @timed for outer i = (iter_count_offset + 1):iter
@@ -133,13 +144,28 @@ function admixture_qn!(d::AdmixData{T}, g::AbstractArray{T}, iter::Int=1000,
         lls = iterinfo[1]
         println("Iteration $i ($(iterinfo.time) sec): " *
                 "LogLikelihood = $(lls.new), reldiff = $(lls.reldiff)")
-        println("    LogLikelihoods: Previous = $(lls.prev), " *
-                "QN = $(lls.qn), Basic = $(lls.basic)")
+        ll_other = "Previous = $(lls.prev) QN = $(lls.qn), Basic = $(lls.basic)"
+        println("    LogLikelihoods: $ll_other")
         if verbose
             println("\n")
         end
+        last_vals = map((x) -> fmt(fspec, x),
+                        llhist[end-min(length(llhist)-1, 5):end])
+        ProgressMeter.next!(p;
+            showvalues = [
+                (:INFO,"Percent is for max $iter iterations. " *
+                    "Likely to converge early at LL ↗ of $rtol."),
+                (:Iteration,i),
+                (Symbol("Execution time"),iterinfo.time),
+                (Symbol("Initial LogLikelihood"),llhist[1]),
+                (Symbol("Current LogLikelihood"),lls.new),
+                (Symbol("Other LogLikelihoods"),ll_other),
+                (Symbol("LogLikelihood ↗"),lls.reldiff),
+                (Symbol("Past LogLikelihoods"),last_vals)])
+        push!(llhist, lls.new)
         if lls.reldiff < rtol
             converged = true
+            ProgressMeter.finish!(p)
             break
         end
     end
