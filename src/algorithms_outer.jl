@@ -61,7 +61,7 @@ Initialize P and Q with the FRAPPE EM algorithm
 - `progress_bar`: Show progress bar while executing.
 """
 function admixture_qn!(d::AdmixData{T}, g::AbstractArray{T}, iter::Int=1000, 
-    rtol= 1e-7; d_cu=nothing, g_cu=nothing, mode=:ZAL, iter_count_offset=0,
+    rtol= 1e-7; d_cu=nothing, g_cu=nothing, mode=:ZAL, iter_count_offset=0, fix_p=false, fix_q=false,
     verbose=false, progress_bar=false) where T
     # qf!(d.qf, d.q, d.f)
     # ll_prev = loglikelihood(g, d.q, d.f, d.qp_small, d.K, d.skipmissing)
@@ -94,10 +94,18 @@ function admixture_qn!(d::AdmixData{T}, g::AbstractArray{T}, iter::Int=1000,
             # qf!(d.qf, d.q, d.f)
             # ll_prev = loglikelihood(g, d.qf)
             d.ll_prev = d.ll_new
-            update_q!(d, g; d_cu=d_cu, g_cu=g_cu, verbose=verbose)
-            update_p!(d, g; d_cu=d_cu, g_cu=g_cu, verbose=verbose)
-            update_q!(d, g, true; d_cu=d_cu, g_cu=g_cu, verbose=verbose)
-            update_p!(d, g, true; d_cu=d_cu, g_cu=g_cu, verbose=verbose)
+            if !fix_q
+                update_q!(d, g; d_cu=d_cu, g_cu=g_cu, verbose=verbose)
+            end
+            if !fix_p
+                update_p!(d, g; d_cu=d_cu, g_cu=g_cu, verbose=verbose)
+            end
+            if !fix_q
+                update_q!(d, g, true; d_cu=d_cu, g_cu=g_cu, verbose=verbose)
+            end
+            if !fix_p
+                update_p!(d, g, true; d_cu=d_cu, g_cu=g_cu, verbose=verbose)
+            end
 
             # qf!(d.qf, d.q_next2, d.f_next2)
             ll_basic = if d_cu !== nothing
