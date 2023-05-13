@@ -9,18 +9,32 @@ Initialize P and Q with the FRAPPE EM algorithm
 - `d_cu`: a `CuAdmixData` if using GPU, `nothing` otherwise.
 - `g_cu`: a `CuMatrix{UInt8}` corresponding to the data part of 
 """
-function init_em!(d::AdmixData{T}, g::AbstractArray{T}, iter::Integer; d_cu=nothing, g_cu=nothing) where T
+function init_em!(d::AdmixData{T}, g::AbstractArray{T}, iter::Integer;
+                  d_cu=nothing, g_cu=nothing, verbose=false) where T
     # qf!(d.qf, d.q, d.f)
     if d_cu !== nothing
         copyto_sync!([d_cu.q, d_cu.p], [d.q, d.p])
     end
     d_ = (d_cu === nothing) ? d : d_cu
     g_ = (g_cu === nothing) ? g : g_cu
-    for _ in 1:iter
-        em_q!(d_, g_)
-        em_p!(d_, g_)
-        d_.p .= d_.p_next
-        d_.q .= d_.q_next
+    println("Performing $iter EM steps for priming")
+    for i in 1:iter
+        if verbose
+            println("Initialization EM Iteration $(i)")
+        end
+        t = @timed begin
+            em_q!(d_, g_; verbose=verbose)
+            em_p!(d_, g_; verbose=verbose)
+            d_.p .= d_.p_next
+            d_.q .= d_.q_next
+        end
+        if d_cu !== nothing
+            copyto_sync!([d.p, d.q], [d_cu.p, d_cu.q])
+            ll = loglikelihood(d_cu, g_cu)
+        else
+            ll = loglikelihood(g, d.q, d.p, d.qp_small, d.K, d.skipmissing)
+        end
+        println("EM Iteration $(i) ($(t.time) sec): Loglikelihood = $ll")
     end
     if d_cu !== nothing
         copyto_sync!([d.p, d.q], [d_cu.p, d_cu.q])
@@ -42,14 +56,23 @@ Initialize P and Q with the FRAPPE EM algorithm
 - `rtol`: convergence tolerance in terms of relative change of loglikelihood.
 - `d_cu`: a `CuAdmixData` if using GPU, `nothing` otherwise.
 - `g_cu`: a `CuMatrix{UInt8}` corresponding to the data part of genotype matrix
-- `mode`: `:ZAL` for Zhou-Alexander-Lange acceleration (2009), `:LBQN` for Agarwal-Xu (2020). 
+- `mode`: `:ZAL` for Zhou-Alexander-Lange acceleration (2009), `:LBQN` for Agarwal-Xu (2020).
+- `verbose`: Print verbose timing information like original script.
+- `progress_bar`: Show progress bar while executing.
 """
 function admixture_qn!(d::AdmixData{T}, g::AbstractArray{T}, iter::Int=1000, 
-    rtol= 1e-7; d_cu=nothing, g_cu=nothing, mode=:ZAL, iter_count_offset=0, fix_p=false, fix_q=false) where T
+    rtol= 1e-7; d_cu=nothing, g_cu=nothing, mode=:ZAL, iter_count_offset=0, fix_p=false, fix_q=false,
+    verbose=false, progress_bar=false) where T
     # qf!(d.qf, d.q, d.f)
     # ll_prev = loglikelihood(g, d.q, d.f, d.qp_small, d.K, d.skipmissing)
     # d.ll_new = ll_prev
     
+    bgpartial = ['▁' ,'▂' ,'▃' ,'▄' ,'▅' ,'▆', '▇']
+    p = Progress(iter, dt=0.5, desc="Running main algorithm",
+        barglyphs=BarGlyphs('|','█', bgpartial,' ','|'),
+        barlen=50, showspeed=true, enabled=progress_bar);
+    fspec = FormatSpec(".4e")
+
     if isnan(d.ll_new)
         if d_cu !== nothing
             copyto_sync!([d_cu.p, d_cu.q], [d.p, d.q])
@@ -60,22 +83,28 @@ function admixture_qn!(d::AdmixData{T}, g::AbstractArray{T}, iter::Int=1000,
     end
 
     println("initial ll: ", d.ll_new)
-    for i in (iter_count_offset + 1):iter
-        @time begin
+    if !progress_bar
+        println("Starting main algorithm")
+    end
+    llhist = [d.ll_new]
+    converged = false
+    i = 0
+    loopstats = @timed for outer i = (iter_count_offset + 1):iter
+        iterinfo = @timed begin
             # qf!(d.qf, d.q, d.f)
             # ll_prev = loglikelihood(g, d.qf)
             d.ll_prev = d.ll_new
             if !fix_q
-                update_q!(d, g; d_cu=d_cu, g_cu=g_cu)
+                update_q!(d, g; d_cu=d_cu, g_cu=g_cu, verbose=verbose)
             end
             if !fix_p
-                update_p!(d, g; d_cu=d_cu, g_cu=g_cu)
+                update_p!(d, g; d_cu=d_cu, g_cu=g_cu, verbose=verbose)
             end
             if !fix_q
-                update_q!(d, g, true; d_cu=d_cu, g_cu=g_cu)
+                update_q!(d, g, true; d_cu=d_cu, g_cu=g_cu, verbose=verbose)
             end
             if !fix_p
-                update_p!(d, g, true; d_cu=d_cu, g_cu=g_cu)
+                update_p!(d, g, true; d_cu=d_cu, g_cu=g_cu, verbose=verbose)
             end
 
             # qf!(d.qf, d.q_next2, d.f_next2)
@@ -117,16 +146,40 @@ function admixture_qn!(d::AdmixData{T}, g::AbstractArray{T}, iter::Int=1000,
                 d.x .= d.x_next2
                 d.ll_new = ll_basic
             end
-            println(d.ll_prev)
-            println(ll_basic)
-            println(ll_qn)
-            reldiff = abs((d.ll_new - d.ll_prev) / d.ll_prev)
-            println("Iteration $i: ll = $(d.ll_new), reldiff = $reldiff")
-            if reldiff < rtol
-                break
-            end
+            (prev = d.ll_prev, basic = ll_basic, qn = ll_qn, new = d.ll_new,
+             reldiff = abs((d.ll_new - d.ll_prev) / d.ll_prev))
         end
-        println()
-        println()
+        lls = iterinfo[1]
+        println("Iteration $i ($(iterinfo.time) sec): " *
+                "LogLikelihood = $(lls.new), reldiff = $(lls.reldiff)")
+        ll_other = "Previous = $(lls.prev) QN = $(lls.qn), Basic = $(lls.basic)"
+        println("    LogLikelihoods: $ll_other")
+        if verbose
+            println("\n")
+        end
+        last_vals = map((x) -> fmt(fspec, x),
+                        llhist[end-min(length(llhist)-1, 5):end])
+        ProgressMeter.next!(p;
+            showvalues = [
+                (:INFO,"Percent is for max $iter iterations. " *
+                    "Likely to converge early at LL ↗ of $rtol."),
+                (:Iteration,i),
+                (Symbol("Execution time"),iterinfo.time),
+                (Symbol("Initial LogLikelihood"),llhist[1]),
+                (Symbol("Current LogLikelihood"),lls.new),
+                (Symbol("Other LogLikelihoods"),ll_other),
+                (Symbol("LogLikelihood ↗"),lls.reldiff),
+                (Symbol("Past LogLikelihoods"),last_vals)])
+        push!(llhist, lls.new)
+        if lls.reldiff < rtol
+            converged = true
+            ProgressMeter.finish!(p)
+            break
+        end
+    end
+    if converged
+        println("Main algorithm converged in $i iterations over $(loopstats.time) sec.")
+    else
+        println("Main algorithm failed to converge after $i iterations over $(loopstats.time) sec.")
     end
 end

@@ -8,7 +8,11 @@
         admix_n_iter = 1000,
         admix_rtol=1e-7,
         admix_n_em_iter = 5,
-        T = Float64, Q = 3, use_gpu=false)
+        T = Float64,
+        Q = 3,
+        use_gpu=false,
+        verbose=false,
+        progress_bar=true)
 
 The main runner function for admixture. 
 
@@ -26,6 +30,7 @@ The main runner function for admixture.
 - `T`: Internal type for floating-point numbers
 - `Q`: number of steps used for quasi-Newton acceleration
 - `use_gpu`: whether to use GPU for computation
+- `progress_bar`: whether to show a progress bar for main loop
 """
 function run_admixture(filename, K; 
     rng=Random.GLOBAL_RNG, 
@@ -39,8 +44,11 @@ function run_admixture(filename, K;
     admix_n_em_iters = 5, 
     T=Float64, 
     Q=3, 
-    use_gpu=false)
+    use_gpu=false,
+    verbose=false,
+    progress_bar=true)
     @assert endswith(filename, ".bed") "filename should end with .bed"
+    println("Using $filename as input.")
     if sparsity !== nothing
         ftn = if skfr_mode == :global
             SKFR.sparsekmeans1
@@ -57,7 +65,7 @@ function run_admixture(filename, K;
     end
     d = _admixture_base(admix_input, K; 
         n_iter=admix_n_iter, rtol=admix_rtol, rng=rng, em_iters=admix_n_em_iters, 
-        T=T, Q=Q, use_gpu=use_gpu)
+        T=T, Q=Q, use_gpu=use_gpu, verbose=verbose, progress_bar=progress_bar)
     d, clusters, aims
 end
 
@@ -120,11 +128,15 @@ function _admixture_base(filename, K;
     em_iters = 5, 
     T=Float64, 
     Q=3, 
-    use_gpu=false)
+    use_gpu=false,
+    verbose=false,
+    progress_bar=true)
+    println("Loading genotype data...")
     g = SnpArray(filename)
     g_la = SnpLinAlg{T}(g)
     I = size(g_la, 1)
     J = size(g_la, 2)
+    println("Loaded $I samples and $J SNPs")
     d = AdmixData{T}(I, J, K, Q; skipmissing=true, rng=rng)
     if use_gpu
         d_cu, g_cu = _cu_admixture_base(d, g_la, I, J)
@@ -132,8 +144,31 @@ function _admixture_base(filename, K;
         d_cu = nothing
         g_cu = nothing
     end
-    @time init_em!(d, g_la, em_iters; d_cu = d_cu, g_cu=g_cu)
-    @time admixture_qn!(d, g_la, n_iter, rtol; d_cu = d_cu, g_cu = g_cu, mode=:ZAL)
+    if verbose
+        @time init_em!(d, g_la, em_iters;
+                       d_cu = d_cu, g_cu=g_cu, verbose=verbose)
+        @time if progress_bar
+            messages = @capture_out admixture_qn!(d, g_la, n_iter, rtol;
+                d_cu = d_cu, g_cu = g_cu, mode=:ZAL,
+                verbose=verbose, progress_bar=true)
+            println(messages)
+        else
+            admixture_qn!(d, g_la, n_iter, rtol;
+                d_cu = d_cu, g_cu = g_cu, mode=:ZAL,
+                verbose=verbose)
+        end
+    else
+        init_em!(d, g_la, em_iters; d_cu = d_cu, g_cu=g_cu)
+        if progress_bar
+            messages = @capture_out admixture_qn!(d, g_la, n_iter, rtol;
+                d_cu = d_cu, g_cu = g_cu, mode=:ZAL, progress_bar=true)
+            println(messages)
+        else
+            admixture_qn!(d, g_la, n_iter, rtol;
+                d_cu = d_cu, g_cu = g_cu, mode=:ZAL,
+                verbose=verbose)
+        end
+    end
     d
 end
 
