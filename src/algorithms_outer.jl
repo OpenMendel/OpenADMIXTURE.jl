@@ -45,7 +45,7 @@ Initialize P and Q with the FRAPPE EM algorithm
 - `mode`: `:ZAL` for Zhou-Alexander-Lange acceleration (2009), `:LBQN` for Agarwal-Xu (2020). 
 """
 function admixture_qn!(d::AdmixData{T}, g::AbstractArray{T}, iter::Int=1000, 
-    rtol= 1e-7; d_cu=nothing, g_cu=nothing, mode=:ZAL, iter_count_offset=0) where T
+    rtol= 1e-7; d_cu=nothing, g_cu=nothing, mode=:ZAL, iter_count_offset=0, fix_p=false, fix_q=false) where T
     # qf!(d.qf, d.q, d.f)
     # ll_prev = loglikelihood(g, d.q, d.f, d.qp_small, d.K, d.skipmissing)
     # d.ll_new = ll_prev
@@ -65,10 +65,18 @@ function admixture_qn!(d::AdmixData{T}, g::AbstractArray{T}, iter::Int=1000,
             # qf!(d.qf, d.q, d.f)
             # ll_prev = loglikelihood(g, d.qf)
             d.ll_prev = d.ll_new
-            update_q!(d, g; d_cu=d_cu, g_cu=g_cu)
-            update_p!(d, g; d_cu=d_cu, g_cu=g_cu)
-            update_q!(d, g, true; d_cu=d_cu, g_cu=g_cu)
-            update_p!(d, g, true; d_cu=d_cu, g_cu=g_cu)
+            if !fix_q
+                update_q!(d, g; d_cu=d_cu, g_cu=g_cu)
+            end
+            if !fix_p
+                update_p!(d, g; d_cu=d_cu, g_cu=g_cu)
+            end
+            if !fix_q
+                update_q!(d, g, true; d_cu=d_cu, g_cu=g_cu)
+            end
+            if !fix_p
+                update_p!(d, g, true; d_cu=d_cu, g_cu=g_cu)
+            end
 
             # qf!(d.qf, d.q_next2, d.f_next2)
             ll_basic = if d_cu !== nothing
