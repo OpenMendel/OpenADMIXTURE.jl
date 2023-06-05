@@ -7,6 +7,7 @@ using SKFR
 export AdmixData
 using Requires, Adapt
 using Polyester
+using ProgressMeter, Suppressor, Formatting
 function __init__()
     @require CUDA="052768ef-5323-5732-b1bb-66c8b64840ba" begin
         using .CUDA
