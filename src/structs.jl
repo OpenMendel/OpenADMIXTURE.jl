@@ -213,3 +213,27 @@ function AdmixData{T}(I, J, K, Q; skipmissing=true, rng=Random.GLOBAL_RNG) where
         idx, idxv,
         NaN, NaN)
 end
+struct QPThreadLocal{T}
+    tmp_k   :: Vector{T}
+    tmp_k1  :: Vector{T}
+    tmp_k1_ :: Vector{T}
+    tmp_k2  :: Vector{T}
+    tmp_k2_ :: Vector{T}
+    tableau_k1 :: Matrix{T}
+    tableau_k2 :: Matrix{T}
+    swept :: Vector{Bool}
+    idx :: Vector{Int}
+end
+function QPThreadLocal{T}(K::Int) where T
+    tmp_k = Vector{T}(undef, K)
+    tmp_k1 = Vector{T}(undef, K+1)
+    tmp_k1_ = Vector{T}(undef, K+1)
+    tmp_k2 = Vector{T}(undef, K+2)
+    tmp_k2_ = similar(tmp_k2)
+    tableau_k1 = Array{T, 2}(undef, K+1, K+1)
+    tableau_k2 = Array{T, 2}(undef, K+2, K+2)
+    swept = convert(Vector{Bool}, trues(K))
+    idx = Array{Int}(undef, K)
+    QPThreadLocal{T}(tmp_k, tmp_k1, tmp_k1_, tmp_k2, tmp_k2_, 
+        tableau_k1, tableau_k2, swept, idx)
+end

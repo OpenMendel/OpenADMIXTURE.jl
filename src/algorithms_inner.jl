@@ -171,19 +171,18 @@ function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=not
         pmin = zeros(T, K)
         pmax = ones(T, K)
 
-        @threads for i in 1:I
+        @batch threadlocal=QPThreadLocal{T}(K) for i in 1:I
             # even the views are allocating something, so we use preallocated views.
             XtX_ = XtXv[i]
             Xtz_ = Xtzv[i]
             q_ = qv[i]
             qdiff_ = qdiffv[i]
 
-            t = threadid()
-            tableau_k2 = d.tableau_k2v[t]
-            tmp_k = d.tmp_kv[t]
-            tmp_k2 = d.tmp_k2v[t]
-            tmp_k2_ = d.tmp_k2_v[t]
-            swept = d.sweptv[t]
+            tableau_k2 = threadlocal.tableau_k2
+            tmp_k = threadlocal.tmp_k
+            tmp_k2 = threadlocal.tmp_k2
+            tmp_k2_ = threadlocal.tmp_k2_
+            swept = threadlocal.swept
             
             create_tableau!(tableau_k2, XtX_, Xtz_, q_, d.v_kk, tmp_k, true)
             quadratic_program!(qdiff_, tableau_k2, q_, pmin, pmax, K, 1, 
@@ -241,7 +240,7 @@ function update_p!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=not
         pmin = zeros(T, K)
         pmax = ones(T, K)
         
-        @threads for j in 1:J
+        @batch threadlocal=QPThreadLocal{T}(K) for j in 1:J
             # even the views are allocating something, so we use preallocated views.
             XtX_ = XtXv[j]
             Xtz_ = Xtzv[j]
@@ -249,11 +248,11 @@ function update_p!(d::AdmixData{T}, g::AbstractArray{T}, update2=false; d_cu=not
             pdiff_ = pdiffv[j]
 
             t = threadid()
-            tableau_k1 = d.tableau_k1v[t]
-            tmp_k = d.tmp_kv[t]
-            tmp_k1 = d.tmp_k1v[t]
-            tmp_k1_ = d.tmp_k1_v[t]
-            swept = d.sweptv[t]
+            tableau_k1 = threadlocal.tableau_k1
+            tmp_k = threadlocal.tmp_k
+            tmp_k1 = threadlocal.tmp_k1
+            tmp_k1_ = threadlocal.tmp_k1_
+            swept = threadlocal.swept
 
             create_tableau!(tableau_k1, XtX_, Xtz_, p_, d.v_kk, tmp_k, false)
             quadratic_program!(pdiff_, tableau_k1, p_, pmin, pmax, K, 0,
