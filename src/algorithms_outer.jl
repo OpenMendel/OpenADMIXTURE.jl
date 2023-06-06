@@ -96,15 +96,23 @@ function admixture_qn!(d::AdmixData{T}, g::AbstractArray{T}, iter::Int=1000,
             d.ll_prev = d.ll_new
             if !fix_q
                 update_q!(d, g; d_cu=d_cu, g_cu=g_cu, verbose=verbose)
+            else
+                d.q_next .= d.q
             end
             if !fix_p
                 update_p!(d, g; d_cu=d_cu, g_cu=g_cu, verbose=verbose)
+            else
+                d.p_next .= d.p
             end
             if !fix_q
                 update_q!(d, g, true; d_cu=d_cu, g_cu=g_cu, verbose=verbose)
+            else
+                d.q_next2 .= d.q
             end
             if !fix_p
                 update_p!(d, g, true; d_cu=d_cu, g_cu=g_cu, verbose=verbose)
+            else
+                d.p_next2 .= d.p
             end
 
             # qf!(d.qf, d.q_next2, d.f_next2)
