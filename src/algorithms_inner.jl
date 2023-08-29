@@ -28,7 +28,7 @@ function loglikelihood(g::SnpLinAlg{T}, q, p, qp_small::AbstractArray{T, 3}, K, 
     I = size(q, 2)
     J = size(p, 2)
     #K = 0 # dummy
-    r = tiler_scalar(skipmissing ? loglikelihood_loop_skipmissing : loglikelihood_loop, 
+    r = threader_scalar(skipmissing ? loglikelihood_loop_skipmissing : loglikelihood_loop, 
         typeof(qp_small), zero(Float64), (g, q, p, qp_small), 1:I, 1:J, K)
     # r = loglikelihood_loop(g, q, p, nothing, 1:I, 1:J, K)
     r

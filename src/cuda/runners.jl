@@ -33,7 +33,7 @@ function em_q!(q_next, g::CuArray{UInt8, 2},
     q_next
 end
 
-function em_q!(d::CuAdmixData{T}, g_cu::CuMatrix{UInt8}) where T
+function em_q!(d::CuAdmixData{T}, g_cu::CuMatrix{UInt8}; verbose=false) where T
     I, J, K = size(d.q, 2), size(g_cu, 2), size(d.q, 1)
     if J == size(d.p, 2)
         em_q!(d.q_next, g_cu, d.q, d.p, I, J)
@@ -57,7 +57,7 @@ function em_p!(p_next, p_tmp, g::CuArray{UInt8, 2},
     p_next
 end
 
-function em_p!(d::CuAdmixData{T}, g_cu::CuMatrix{UInt8}) where T
+function em_p!(d::CuAdmixData{T}, g_cu::CuMatrix{UInt8}; verbose=false) where T
     I, J, K = size(d.q, 2), size(g_cu, 2), size(d.q, 1)
     if J == size(d.p, 2)
         em_p!(d.p_next, d.p_tmp, g_cu, d.q, d.p, I, J)

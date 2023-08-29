@@ -220,6 +220,43 @@ function tiler_scalar(ftn::F, ::Type{T}, z::RT, arrs::Tuple, irange, jrange, K; 
     end
 end
 
+function threader_scalar(ftn::F, ::Type{T}, z::RT, arrs::Tuple, irange, jrange, K; maxL=tile_maxiter(T)) where {F <: Function, T, RT}
+    ilen, jlen = length(irange), length(jrange)
+    maxL = tile_maxiter(T)
+    r = Threads.Atomic{RT}(z)
+    if ilen > maxL || jlen > maxL
+        if ilen > jlen
+            I1s, I2s = cleave(irange)
+            task1 = Threads.@spawn begin
+                # println("threader: $irange $J1 on $(threadid())")
+                r1 = threader_scalar(ftn, T, z, arrs, I1s, jrange, K)
+                Threads.atomic_add!(r, r1)
+            end
+            task2 = Threads.@spawn begin
+                r2 = threader_scalar(ftn, T, z, arrs, I2s, jrange, K)
+                Threads.atomic_add!(r, r2)
+            end
+            wait(task1)
+            wait(task2)
+        else
+            J1s, J2s = cleave(jrange)
+            task1 = Threads.@spawn begin
+                r1 = threader_scalar(ftn, T, z, arrs, irange, J1s, K)
+                Threads.atomic_add!(r, r1)
+            end
+            task2 = Threads.@spawn begin
+                r2 = threader_scalar(ftn, T, z, arrs, irange, J2s, K) 
+                Threads.atomic_add!(r, r2)
+            end
+            wait(task1)
+            wait(task2)      
+        end
+        return r[]
+    else
+        return ftn(arrs..., irange, jrange, K)::RT
+    end
+end
+
 """
     tiler_scalar_1d(ftn, ::Type{T}, z::RT, arrs, irange, jrange, K; 
     maxL=tile_maxiter(T))
