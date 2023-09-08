@@ -520,7 +520,9 @@ version = "0.1.0"
 
 [[deps.SKFR]]
 deps = ["DelimitedFiles", "Distances", "LoopVectorization", "Missings", "Random", "SnpArrays", "Statistics", "StatsBase", "Tullio"]
-path = "/home/kose/.julia/dev/SKFR"
+git-tree-sha1 = "2c18be9f61e1c60635801b2984ff97a39b79d8b9"
+repo-rev = "master"
+repo-url = "https://github.com/kose-y/SKFR.jl"
 uuid = "a6138be3-5d3e-4f3e-9009-7e37efc59f36"
 version = "0.1.0"
 
