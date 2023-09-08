@@ -9,4 +9,7 @@ using Test
     rng = MersenneTwister(7856)
     d, _, _ = OpenADMIXTURE.run_admixture(EUR, 4; sparsity=1000, rng=rng, prefix="test")
     @test d.ll_new ≈ -216519.78193892565
+    rm("test_4_1000aims.bed", force=true)
+    rm("test_4_1000aims.bim", force=true)
+    rm("test_4_1000aims.fam", force=true)
 end
