@@ -7,7 +7,7 @@ With more efficient multi-threading scheme, it is 8 times faster than the origin
 
 ## Installation
 
-This package requires Julia v1.6 or later, which can be obtained from
+This package requires Julia v1.9 or later, which can be obtained from
 <https://julialang.org/downloads/> or by building Julia from the sources in the
 <https://github.com/JuliaLang/julia> repository.
 
