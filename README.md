@@ -30,7 +30,7 @@ pkg"add CUDA"
 ## Citation
 The methods and applications of this software package are detailed in the following publication:
 
-_Ko S, Chu BB, Peterson D, Okenwa C, Papp JC, Alexander DH, Sobel EM, Zhou H, Lange K. Unsupervised Discovery of Ancestry Informative Markers and Genetic Admixture Proportions in Biobank-Scale Data Sets. Am. J. Hum. Genet. Just-accepted. [[preprint](https://www.biorxiv.org/content/10.1101/2022.10.22.513294v1)]_
+_Ko S, Chu BB, Peterson D, Okenwa C, Papp JC, Alexander DH, Sobel EM, Zhou H, Lange K. Unsupervised Discovery of Ancestry Informative Markers and Genetic Admixture Proportions in Biobank-Scale Data Sets. Am J Hum Genet. 110, pp. 314–325. [[DOI](https://doi.org/10.1016/j.ajhg.2022.12.008)]_
 
 If you use OpenMendel analysis packages in your research, please cite the following reference in the resulting publications:
 
