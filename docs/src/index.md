@@ -2,7 +2,7 @@
 
 This software package is an open-source Julia reimplementation of the [ADMIXTURE](https://dalexander.github.io/admixture/) package. With more efficient multi-threading scheme, it is 8 times faster than the original software. It also supports computation on an Nvidia CUDA GPU. By directly using the data format of the PLINK BED file, the memory usage is 16x-32x smaller than using `Float32` or `Float64` type.
 
-It estimates ancestry with maximum-likelihood method for a large SNP genotype datasets, where individuals are assumed to be unrelated. The input is binary PLINK 1 BED-formatted file (`.bed`). Also, you will need an idea of $K$, the number of ancestral populations. If the number of SNPs is too large, you may choose to run on a subset of SNPs selected by their information content, using the [sparse $K$-means via feature ranking](https://github.com/kose-y/SKFR.jl) (SKFR) method.
+It estimates ancestry with maximum-likelihood method for a large SNP genotype datasets, where individuals are assumed to be unrelated. The input is binary PLINK 1 BED-formatted file (`.bed`). Also, you will need an idea of $K$, the number of ancestral populations. If the number of SNPs is too large, you may choose to run on a subset of SNPs selected by their information content, using the [sparse $K$-means via feature ranking](https://github.com/kose-y/SparseKmeansFeatureRanking.jl) (SKFR) method.
 
 ## Installation
 
@@ -13,7 +13,7 @@ This package requires Julia v1.6 or later, which can be obtained from
 The package can be installed by running the following code:
 ```julia
 using Pkg
-pkg"add https://github.com/kose-y/SKFR.jl"
+pkg"add https://github.com/kose-y/SparseKmeansFeatureRanking.jl"
 pkg"add https://github.com/OpenMendel/OpenADMIXTURE.jl"
 ```
 For running the examples below, the following are also necessary. 

@@ -3,7 +3,7 @@ using Random, LoopVectorization
 import LinearAlgebra: svd, norm, diag, mul!, dot
 using SnpArrays
 using Base.Threads
-using SKFR
+using SparseKmeansFeatureRanking
 export AdmixData
 using Requires, Adapt
 using Polyester
