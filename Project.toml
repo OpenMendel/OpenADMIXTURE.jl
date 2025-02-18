@@ -18,7 +18,7 @@ StableRNGs = "860ef19b-820b-49d6-a774-d7a799459cd3"
 Suppressor = "fd094767-a336-5f1f-9728-57cf17d0bbfb"
 
 [compat]
-Adapt = "3.3"
+Adapt = "3.3, 4"
 Formatting = "0.4"
 LoopVectorization = "0.12"
 Polyester = "0.7"
