@@ -17,7 +17,7 @@ SparseKmeansFeatureRanking = "a6138be3-5d3e-4f3e-9009-7e37efc59f36"
 Suppressor = "fd094767-a336-5f1f-9728-57cf17d0bbfb"
 
 [compat]
-Adapt = "3.3"
+Adapt = "3.3, 4"
 Formatting = "0.4"
 LoopVectorization = "0.12"
 Polyester = "0.7"
