@@ -54,6 +54,7 @@ Initialize P and Q with the FRAPPE EM algorithm
 - `g`: a genotype matrix.
 - `iter`: number of iterations.
 - `rtol`: convergence tolerance in terms of relative change of loglikelihood.
+- `atol`: if given, stop when the absolute change of loglikelihood is below `atol` (ADMIXTURE `-C`); overrides `rtol`.
 - `d_cu`: a `CuAdmixData` if using GPU, `nothing` otherwise.
 - `g_cu`: a `CuMatrix{UInt8}` corresponding to the data part of genotype matrix
 - `mode`: `:ZAL` for Zhou-Alexander-Lange acceleration (2009), `:LBQN` for Agarwal-Xu (2020).
@@ -61,7 +62,7 @@ Initialize P and Q with the FRAPPE EM algorithm
 - `progress_bar`: Show progress bar while executing.
 """
 function admixture_qn!(d::AdmixData{T}, g::AbstractArray{T}, iter::Int=1000, 
-    rtol= 1e-7; d_cu=nothing, g_cu=nothing, mode=:ZAL, iter_count_offset=0, fix_p=false, fix_q=false,
+    rtol= 1e-7; d_cu=nothing, g_cu=nothing, mode=:ZAL, iter_count_offset=0, fix_p=false, fix_q=false, atol=nothing,
     verbose=false, progress_bar=false) where T
     # qf!(d.qf, d.q, d.f)
     # ll_prev = loglikelihood(g, d.q, d.f, d.qp_small, d.K, d.skipmissing)
@@ -178,7 +179,7 @@ function admixture_qn!(d::AdmixData{T}, g::AbstractArray{T}, iter::Int=1000,
                 (Symbol("LogLikelihood ↗"),lls.reldiff),
                 (Symbol("Past LogLikelihoods"),last_vals)])
         push!(llhist, lls.new)
-        if lls.reldiff < rtol
+        if (atol === nothing ? lls.reldiff < rtol : abs(lls.new - lls.prev) < atol)
             converged = true
             ProgressMeter.finish!(p)
             break
