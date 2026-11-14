@@ -71,7 +71,6 @@ function admixture_qn!(d::AdmixData{T}, g::AbstractArray{T}, iter::Int=1000,
     p = Progress(iter, dt=0.5, desc="Running main algorithm",
         barglyphs=BarGlyphs('|','█', bgpartial,' ','|'),
         barlen=50, showspeed=true, enabled=progress_bar);
-    fspec = FormatSpec(".4e")
 
     if isnan(d.ll_new)
         if d_cu !== nothing
@@ -165,7 +164,7 @@ function admixture_qn!(d::AdmixData{T}, g::AbstractArray{T}, iter::Int=1000,
         if verbose
             println("\n")
         end
-        last_vals = map((x) -> fmt(fspec, x),
+        last_vals = map((x) -> @sprintf("%.4e", x),
                         llhist[end-min(length(llhist)-1, 5):end])
         ProgressMeter.next!(p;
             showvalues = [

@@ -135,6 +135,9 @@ function em_p!(d::AdmixData{T}, g::AbstractArray{T}; mode=:base, verbose=false) 
             p_next[k, j] = p_tmp[k, j] / (p_tmp[k, j] + p_next[k, j])
         end
     end
+    # Keep P inside [ε, 1-ε] as the QP updates do: a monomorphic SNP otherwise
+    # reaches exactly 0 or 1, and 0 * log(0) turns the likelihood into NaN.
+    project_p!(p_next)
     # @tullio f_tmp[k, j] = g[i, j] * q[k, i] * f[k, j] / qf[i, j]
     # @tullio f_new[k, j] = (2 - g[i, j]) * q[k, i] * (1 - f[k, j]) / (1 - qf[i, j])
     # @tullio f_new[k, j] = f_tmp[k, j] / (f_tmp[k, j] + f_new[k, j])
@@ -202,22 +205,32 @@ function update_q!(d::AdmixData{T}, g::AbstractArray{T}, update2=false;
         pmin = zeros(T, K)
         pmax = ones(T, K)
 
-        @batch threadlocal=QPThreadLocal{T}(K) for i in 1:I
-            # even the views are allocating something, so we use preallocated views.
-            XtX_ = XtXv[i]
-            Xtz_ = Xtzv[i]
-            q_ = qv[i]
-            qdiff_ = qdiffv[i]
+        # One task per chunk, each with its own scratch buffers. Replaces Polyester's
+        # `@batch threadlocal=...`, whose C-callable closures Julia does not support on
+        # aarch64 ("cfunction: closures are not supported on this platform").
+        # Keep this loop inline: passing the body as a closure to a helper function
+        # produced NaNs in the QP solutions on Julia 1.13 / aarch64 (not understood yet).
+        @sync for chunk in Iterators.partition(1:I, cld(I, nthreads()))
+            Threads.@spawn begin
+                threadlocal = QPThreadLocal{T}(K)
+                for i in chunk
+                    # even the views are allocating something, so we use preallocated views.
+                    XtX_ = XtXv[i]
+                    Xtz_ = Xtzv[i]
+                    q_ = qv[i]
+                    qdiff_ = qdiffv[i]
 
-            tableau_k2 = threadlocal.tableau_k2
-            tmp_k = threadlocal.tmp_k
-            tmp_k2 = threadlocal.tmp_k2
-            tmp_k2_ = threadlocal.tmp_k2_
-            swept = threadlocal.swept
-            
-            create_tableau!(tableau_k2, XtX_, Xtz_, q_, d.v_kk, tmp_k, true)
-            quadratic_program!(qdiff_, tableau_k2, q_, pmin, pmax, K, 1, 
-                tmp_k2, tmp_k2_, swept)
+                    tableau_k2 = threadlocal.tableau_k2
+                    tmp_k = threadlocal.tmp_k
+                    tmp_k2 = threadlocal.tmp_k2
+                    tmp_k2_ = threadlocal.tmp_k2_
+                    swept = threadlocal.swept
+
+                    create_tableau!(tableau_k2, XtX_, Xtz_, q_, d.v_kk, tmp_k, true)
+                    quadratic_program!(qdiff_, tableau_k2, q_, pmin, pmax, K, 1, 
+                        tmp_k2, tmp_k2_, swept)
+                end
+            end
         end
         @turbo for i in 1:I
             for k in 1:K
@@ -278,23 +291,32 @@ function update_p!(d::AdmixData{T}, g::AbstractArray{T},
         pmin = zeros(T, K)
         pmax = ones(T, K)
         
-        @batch threadlocal=QPThreadLocal{T}(K) for j in 1:J
-            # even the views are allocating something, so we use preallocated views.
-            XtX_ = XtXv[j]
-            Xtz_ = Xtzv[j]
-            p_ = pv[j]
-            pdiff_ = pdiffv[j]
+        # One task per chunk, each with its own scratch buffers. Replaces Polyester's
+        # `@batch threadlocal=...`, whose C-callable closures Julia does not support on
+        # aarch64 ("cfunction: closures are not supported on this platform").
+        # Keep this loop inline: passing the body as a closure to a helper function
+        # produced NaNs in the QP solutions on Julia 1.13 / aarch64 (not understood yet).
+        @sync for chunk in Iterators.partition(1:J, cld(J, nthreads()))
+            Threads.@spawn begin
+                threadlocal = QPThreadLocal{T}(K)
+                for j in chunk
+                    # even the views are allocating something, so we use preallocated views.
+                    XtX_ = XtXv[j]
+                    Xtz_ = Xtzv[j]
+                    p_ = pv[j]
+                    pdiff_ = pdiffv[j]
 
-            t = threadid()
-            tableau_k1 = threadlocal.tableau_k1
-            tmp_k = threadlocal.tmp_k
-            tmp_k1 = threadlocal.tmp_k1
-            tmp_k1_ = threadlocal.tmp_k1_
-            swept = threadlocal.swept
+                    tableau_k1 = threadlocal.tableau_k1
+                    tmp_k = threadlocal.tmp_k
+                    tmp_k1 = threadlocal.tmp_k1
+                    tmp_k1_ = threadlocal.tmp_k1_
+                    swept = threadlocal.swept
 
-            create_tableau!(tableau_k1, XtX_, Xtz_, p_, d.v_kk, tmp_k, false)
-            quadratic_program!(pdiff_, tableau_k1, p_, pmin, pmax, K, 0,
-                tmp_k1, tmp_k1_, swept)
+                    create_tableau!(tableau_k1, XtX_, Xtz_, p_, d.v_kk, tmp_k, false)
+                    quadratic_program!(pdiff_, tableau_k1, p_, pmin, pmax, K, 0,
+                        tmp_k1, tmp_k1_, swept)
+                end
+            end
         end
         @turbo for j in 1:J
             for k in 1:K

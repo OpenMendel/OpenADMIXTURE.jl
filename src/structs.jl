@@ -103,7 +103,7 @@ Constructor for Admixture information.
 - rng: Random number generation.
 """
 function AdmixData{T}(I, J, K, Q; skipmissing=true, rng=Random.GLOBAL_RNG) where T
-    NT = nthreads()
+    NT = nthread_buffers()
     x = convert(Array{T}, rand(rng, K, I + J))
     x_next = similar(x)
     x_next2 = similar(x)
@@ -166,7 +166,10 @@ function AdmixData{T}(I, J, K, Q; skipmissing=true, rng=Random.GLOBAL_RNG) where
 
     # qf = rand(T, I, J);
     maxL = tile_maxiter(typeof(Xtz_p))
-    qp_small = convert(Array{T}, rand(rng, maxL, maxL, NT))
+    # Scratch space, overwritten before use. Do not draw it from `rng`: its size
+    # depends on the thread count and would shift every later draw (U, V), making
+    # results depend on the number of threads.
+    qp_small = zeros(T, maxL, maxL, NT)
     qp_smallv = [view(qp_small, :, :, t) for t in 1:NT]
     # qf_thin  = rand(T, I, maxL)
     # f_tmp = similar(f)
