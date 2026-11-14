@@ -27,6 +27,38 @@ For GPU support, an Nvidia GPU is required. Also, the following package has to b
 pkg"add CUDA"
 ```
 
+## Command line (ADMIXTURE 1.3-compatible)
+
+`bin/openadmixture` accepts ADMIXTURE's syntax and writes the same files in the
+current directory:
+
+```bash
+bin/openadmixture -j8 --cv=10 -B500 -s 12345 data.bed 3
+# -> data.3.Q, data.3.P, data.3.Q_se
+# stdout: "Loglikelihood: ...", "CV error (K=3): 0.47835"
+```
+
+| Option | Meaning |
+|---|---|
+| `-jN` | threads (passed to Julia as `-t N`; default 1, as in ADMIXTURE) |
+| `-s SEED\|time` | random seed (default 43) |
+| `--cv[=v]` | v-fold cross-validation (default 5), ADMIXTURE manual §2.1.1 |
+| `-B[n]` | bootstrap standard errors of Q, n replicates (default 200) |
+| `-C ε\|N` | stop when the log-likelihood changes by less than ε (default 1e-4, absolute) or after N iterations |
+| `-c ε\|N` | same, for bootstrap replicates (default 3 iterations) |
+| `-a qnN` | quasi-Newton acceleration with N secant conditions (default 3) |
+| `--bootstrap-block=L` | bootstrap block length in SNPs (default: cube root of the number of SNPs) |
+
+Bootstrap resamples blocks of consecutive SNPs within each chromosome (read from
+the `.bim` file). ADMIXTURE does not document its block length, so the default
+here is a choice of this implementation.
+
+Not supported yet: `--supervised`, `-P`, `-m`, `-a none`, `-l`, `-e`,
+`--haploid`, and `.ped`/`.geno` input (convert with `plink --make-bed`).
+
+The same features are available from Julia: `OpenADMIXTURE.cv_error`,
+`OpenADMIXTURE.bootstrap_se` and `OpenADMIXTURE.main(args)`.
+
 ## Citation
 The methods and applications of this software package are detailed in the following publication:
 

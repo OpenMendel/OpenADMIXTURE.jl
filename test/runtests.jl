@@ -60,4 +60,5 @@ end
         @test ll_4_0 ≈ ll_1 rtol = 1e-8
     end
 end
+include("test_extensions.jl")
 end # OpenADMIXTURE

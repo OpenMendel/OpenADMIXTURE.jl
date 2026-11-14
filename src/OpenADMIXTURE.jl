@@ -7,6 +7,7 @@ using SparseKmeansFeatureRanking
 export AdmixData
 using Requires, Adapt
 using ProgressMeter, Suppressor, Printf
+using StableRNGs
 function __init__()
     @require CUDA="052768ef-5323-5732-b1bb-66c8b64840ba" begin
         using .CUDA
@@ -25,4 +26,7 @@ include("loops.jl")
 include("algorithms_inner.jl")
 include("algorithms_outer.jl")
 include("driver.jl")
+include("cv.jl")
+include("bootstrap.jl")
+include("cli.jl")
 end
