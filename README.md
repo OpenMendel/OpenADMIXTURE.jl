@@ -56,6 +56,12 @@ here is a choice of this implementation.
 Not supported yet: `--supervised`, `-P`, `-m`, `-a none`, `-l`, `-e`,
 `--haploid`, and `.ped`/`.geno` input (convert with `plink --make-bed`).
 
+The package precompiles a small command-line run (PrecompileTools), so the
+first analysis of a session does not pay for compilation: a run starts in about
+7 s, most of it loading packages. A PackageCompiler app would start faster but
+is not provided: LoopVectorization's `@turbo` kernels lose type inference inside
+system images (Julia 1.13), which made the compiled app about 27 times slower.
+
 The same features are available from Julia: `OpenADMIXTURE.cv_error`,
 `OpenADMIXTURE.bootstrap_se` and `OpenADMIXTURE.main(args)`.
 

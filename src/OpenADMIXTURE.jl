@@ -29,4 +29,5 @@ include("driver.jl")
 include("cv.jl")
 include("bootstrap.jl")
 include("cli.jl")
+include("precompile.jl")
 end
