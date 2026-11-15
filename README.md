@@ -30,7 +30,9 @@ pkg"add CUDA"
 ## Command line (ADMIXTURE 1.3-compatible)
 
 `bin/openadmixture` accepts ADMIXTURE's syntax and writes the same files in the
-current directory:
+current directory. A detailed guide (in French) for Apple Silicon Macs —
+installation, options, output formats, performance, pipeline integration and
+troubleshooting — is in [GUIDE-macOS.md](GUIDE-macOS.md).
 
 ```bash
 bin/openadmixture -j8 --cv=10 -B500 -s 12345 data.bed 3
