@@ -224,7 +224,7 @@ Même procédure que dans le manuel d'ADMIXTURE (§2.1.1) : on lance chaque K av
 `--cv` et on retient le K à l'erreur de CV minimale (ou au coude de la courbe).
 
 ```bash
-for K in 2 3 4 5 6 7 8; do
+for K in 1 2 3 4 5 6 7 8; do
     openadmixture -j16 -s 43 --cv data.bed $K > log_K$K.out
 done
 grep -h "CV error" log_K*.out | sort -t= -k2n
@@ -478,7 +478,7 @@ chaque fois) ou accéder aux matrices directement :
 using OpenADMIXTURE, SnpArrays, StableRNGs
 
 # 1. Exactement comme la ligne de commande (fichiers écrits dans pwd())
-for K in 2:8
+for K in 1:8
     OpenADMIXTURE.main(["-s", "43", "--cv", "data.bed", string(K)])
 end
 
@@ -492,8 +492,9 @@ err = OpenADMIXTURE.cv_error(g, 3, d.q, d.p; folds=5, seed=43, quiet=true)
 se  = OpenADMIXTURE.bootstrap_se(g, 3, d.q, d.p; B=200, quiet=true)   # N × K
 ```
 
-`_admixture_base` est une fonction interne : son interface peut changer. Pour
-un usage durable, utiliser `main`.
+`_admixture_base` est une fonction interne, réservée à K ≥ 2 ; pour K = 1,
+utiliser `OpenADMIXTURE.fit_one_population(g)`. Son interface peut changer :
+pour un usage durable, utiliser `main`.
 
 ---
 
