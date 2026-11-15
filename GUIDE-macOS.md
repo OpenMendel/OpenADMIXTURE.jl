@@ -1,5 +1,7 @@
 # OpenADMIXTURE sur Mac Apple Silicon — guide d'utilisation
 
+*English version: [GUIDE-macOS.en.md](GUIDE-macOS.en.md).*
+
 Ce guide explique comment lancer une analyse d'ascendance avec le fork
 OpenADMIXTURE (remplaçant natif arm64 d'ADMIXTURE 1.3) sur le Mac Studio M3
 Ultra de l'équipe, et comment l'intégrer dans un pipeline, en particulier
