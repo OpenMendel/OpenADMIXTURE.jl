@@ -81,7 +81,7 @@ function bootstrap_se(g::SnpArray, K::Integer, q0::AbstractMatrix, p0::AbstractM
         end
         fill!(gb.columncounts, 0)  # zero counts are recomputed on demand
         fill!(gb.rowcounts, 0)
-        fitrep() = _admixture_base(gb, K; init_q=copy(q0), init_p=p0[:, idx],
+        fitrep() = _fit(gb, K; init_q=copy(q0), init_p=p0[:, idx],
             n_iter=n_iter, rtol=rtol, atol=minor_atol,
             rng=StableRNG(rand(rng, UInt32)), progress_bar=false, fit_kwargs...)
         d = quiet ? (@suppress_out fitrep()) : fitrep()

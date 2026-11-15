@@ -117,7 +117,7 @@ function parse_cli(args::AbstractVector{<:AbstractString})
     length(pos) == 2 || throw(ArgumentError("expected <input.bed> <K>, got $(length(pos)) positional argument(s)"))
     endswith(pos[1], ".bed") || throw(ArgumentError("only PLINK .bed input is supported; convert with `plink --make-bed`"))
     o.bedfile = pos[1]
-    o.K = _int(pos[2], "K"; min=2)
+    o.K = _int(pos[2], "K"; min=1)
     o
 end
 
@@ -165,7 +165,7 @@ function main(args=ARGS)
     major = o.max_iter === nothing ? (n_iter=1000, rtol=1e-7, atol=o.atol) :
                                      (n_iter=o.max_iter, rtol=0.0, atol=nothing)
     g = SnpArray(o.bedfile)
-    t = @elapsed d = _admixture_base(g, o.K; rng=StableRNG(o.seed), Q=o.qn,
+    t = @elapsed d = _fit(g, o.K; rng=StableRNG(o.seed), Q=o.qn,
                                      progress_bar=false, major...)
     @printf("Loglikelihood: %.6f\n", d.ll_new)
     @printf("Point estimation time: %.1f sec\n", t)

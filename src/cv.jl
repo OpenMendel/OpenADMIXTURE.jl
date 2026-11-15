@@ -75,7 +75,7 @@ function cv_error(g::SnpArray, K::Integer, q0::AbstractMatrix, p0::AbstractMatri
     cnt = zeros(Int, J)
     for f in 1:folds
         masked = mask_fold(g, f, folds, seed)
-        fitfold() = _admixture_base(masked, K; init_q=copy(q0), init_p=copy(p0),
+        fitfold() = _fit(masked, K; init_q=copy(q0), init_p=copy(p0),
             rng=StableRNG(seed + f), progress_bar=false, fit_kwargs...)
         d = quiet ? (@suppress_out fitfold()) : fitfold()
         q, p = d.q, d.p

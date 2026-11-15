@@ -100,6 +100,80 @@ end
     @test any(>(0), se)
 end
 
+@testset "Q and P stay valid after the fit result is garbage-collected" begin
+    # d.q / d.p used to be unsafe_wrap'ed views into d.x: once `d` was unreachable
+    # the GC freed d.x and they read reused memory (NaN in cross-validation folds).
+    s, _, _ = simulate(60, 400, 2)
+    # in a separate function, so that nothing on this stack frame keeps `d` alive
+    q, p = (@noinline function (s)
+        d = fit(s, 2)
+        d.q, d.p
+    end)(s)
+    q0, p0 = copy(q), copy(p)
+    GC.gc(true); GC.gc(true)                        # collects `d`
+    junk = [fill(NaN, 2 * (60 + 400)) for _ in 1:200]   # reuse any freed memory
+    @test q == q0 && p == p0
+    junk = nothing
+end
+
+@testset "quasi-Newton step without usable secant information" begin
+    x, xm = [0.2, 0.3, 0.5], [0.25, 0.3, 0.45]
+    out = similar(x)
+    U = zeros(3, 2)                      # zero steps: U'(U - V) is singular
+    OpenADMIXTURE.update_QN!(out, xm, x, U, zeros(3, 2))
+    @test out == xm                      # falls back to the plain EM step
+    OpenADMIXTURE.update_QN!(out, xm, x, fill(NaN, 3, 2), zeros(3, 2))
+    @test out == xm
+    U = [0.1 0.0; 0.0 0.2; 0.1 0.1]; V = 0.5 .* U   # well-posed case unchanged
+    OpenADMIXTURE.update_QN!(out, xm, x, U, V)
+    @test out ≈ xm .- V * (inv(U' * (U .- V)) * (U' * (x .- xm)))
+end
+
+@testset "K = 1 (analytic fit)" begin
+    # 4 individuals x 3 SNPs; codes 0x00/0x02/0x03 = 0/1/2 copies, 0x01 = missing
+    s = SnpArray(undef, 4, 3)
+    for (j, col) in enumerate(([0x00, 0x02, 0x03, 0x01],   # 3 copies / 6 observed alleles
+                               [0x00, 0x00, 0x00, 0x00],   # monomorphic
+                               [0x01, 0x01, 0x01, 0x01]))  # all missing
+        for i in 1:4
+            s[i, j] = col[i]
+        end
+    end
+    d = OpenADMIXTURE.fit_one_population(s)
+    @test d.q == ones(1, 4)
+    @test d.p[1, 1] ≈ 0.5
+    @test d.p[1, 2] ≈ 1e-5                       # kept inside (0, 1), like project_p!
+    @test d.p[1, 3] ≈ 0.5                        # no data: uninformative
+    f2 = 1e-5
+    @test d.ll_new ≈ 6 * log(0.5) + 8 * log(1 - f2)
+    # _fit dispatches K = 1 to the analytic estimate
+    @test OpenADMIXTURE._fit(s, 1; rng=StableRNG(1)).p == d.p
+
+    # CV error at K = 1: P re-estimated without the masked fold, deviance on the fold
+    g, _, _ = simulate(60, 400, 3)
+    v, seed = 4, 43
+    I, J = size(g)
+    dev, cnt = 0.0, 0
+    for f in 1:v
+        pf = OpenADMIXTURE.fit_one_population(OpenADMIXTURE.mask_fold(g, f, v, seed)).p
+        for j in 1:J, i in 1:I
+            OpenADMIXTURE.cv_fold(i, j, v, seed) == f || continue
+            g[i, j] == 0x01 && continue
+            dev += OpenADMIXTURE.binomial_deviance(OpenADMIXTURE._allele_count(g[i, j]), 2pf[1, j])
+            cnt += 1
+        end
+    end
+    d1 = OpenADMIXTURE.fit_one_population(g)
+    e1 = OpenADMIXTURE.cv_error(g, 1, d1.q, d1.p; folds=v, seed=seed, quiet=true)
+    @test e1 ≈ dev / cnt
+    # structured data: K = 1 fits worse than the true K
+    d3 = fit(g, 3)
+    @test e1 > OpenADMIXTURE.cv_error(g, 3, d3.q, d3.p; folds=v, seed=seed, quiet=true)
+    # Q is fixed at 1, so its bootstrap standard error is 0
+    se = OpenADMIXTURE.bootstrap_se(g, 1, d1.q, d1.p; B=3, quiet=true)
+    @test size(se) == (60, 1) && all(iszero, se)
+end
+
 @testset "command-line parsing (ADMIXTURE syntax)" begin
     parse = OpenADMIXTURE.parse_cli
     o = parse(["data.bed", "3"])
@@ -124,6 +198,8 @@ end
     @test o.minor_atol == 0.5 && o.minor_iter === nothing
     @test parse(["-a", "qn2", "x.bed", "2"]).qn == 2
     @test parse(["--bootstrap-block=50", "-B10", "x.bed", "2"]).block == 50
+    @test parse(["x.bed", "1"]).K == 1                       # ADMIXTURE accepts K = 1
+    @test_throws ArgumentError parse(["x.bed", "0"])
     @test_throws ArgumentError parse(["x.bed"])
     @test_throws ArgumentError parse(["x.ped", "2"])           # only .bed input
     @test_throws ArgumentError parse(["--supervised", "x.bed", "2"])
@@ -157,5 +233,28 @@ end
         @test occursin(r"^\d\.\d{6} \d\.\d{6} \d\.\d{6}$", first(eachline(Qf)))
         @test countlines(Pf) == 1500
         @test countlines(SEf) == 90
+    end
+end
+
+@testset "command line end to end, K = 1" begin
+    s, _, chroms = simulate(40, 300, 2)
+    mktempdir() do dir
+        prefix = joinpath(dir, "one")
+        write_plink(prefix, s, chroms)
+        out = cd(dir) do
+            pipe = Pipe()
+            status = redirect_stdout(pipe) do
+                OpenADMIXTURE.main(["--cv", "-B2", "-s", "5", prefix * ".bed", "1"])
+            end
+            close(pipe.in)
+            @test status == 0
+            read(pipe, String)
+        end
+        @test occursin(r"CV error \(K=1\): \d+\.\d{5}\n", out)
+        @test occursin(r"(?m)^Loglikelihood: -\d+\.\d+$", out)
+        Qf, Pf, SEf = (joinpath(dir, "one.1." * e) for e in ("Q", "P", "Q_se"))
+        @test all(==("1.000000"), eachline(Qf)) && countlines(Qf) == 40
+        @test countlines(Pf) == 300
+        @test all(==("0.000000"), eachline(SEf))
     end
 end

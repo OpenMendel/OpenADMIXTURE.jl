@@ -28,6 +28,7 @@ using PrecompileTools: @setup_workload, @compile_workload
                     redirect_stderr(devnull) do
                         main(["--cv=2", "-B2", "-s", "1", "-C", "1e-2", prefix * ".bed", "2"])
                         main(["-C", "3", prefix * ".bed", "2"])
+                        main(["--cv=2", "-B2", prefix * ".bed", "1"])
                         main(["--help"])
                         main(["--bogus"])
                     end

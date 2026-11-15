@@ -1,6 +1,6 @@
 module OpenADMIXTURE
 using Random, LoopVectorization
-import LinearAlgebra: svd, norm, diag, mul!, dot
+import LinearAlgebra: svd, norm, diag, mul!, dot, SingularException, LAPACKException
 using SnpArrays
 using Base.Threads
 using SparseKmeansFeatureRanking
@@ -27,6 +27,7 @@ include("algorithms_inner.jl")
 include("algorithms_outer.jl")
 include("driver.jl")
 include("cv.jl")
+include("onepop.jl")
 include("bootstrap.jl")
 include("cli.jl")
 include("precompile.jl")
