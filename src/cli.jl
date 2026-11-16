@@ -169,6 +169,7 @@ function main(args=ARGS)
                                      progress_bar=false, major...)
     @printf("Loglikelihood: %.6f\n", d.ll_new)
     @printf("Point estimation time: %.1f sec\n", t)
+    flush(stdout)
 
     out = basename(base) * ".$(o.K)."
     _write_matrix(out * "Q", permutedims(d.q))
@@ -183,6 +184,7 @@ function main(args=ARGS)
             minor_atol=o.minor_atol, quiet=true, Q=o.qn)
         _write_matrix(out * "Q_se", se)
         @printf("Bootstrap time: %.1f sec\n", t)
+        flush(stdout)
     end
 
     if o.cv > 0
@@ -190,6 +192,7 @@ function main(args=ARGS)
                                     quiet=true, Q=o.qn, major...)
         @printf("CV error (K=%d): %.5f\n", o.K, err)
         @printf("Cross-validation time: %.1f sec\n", t)
+        flush(stdout)
     end
     println("Wrote ", out, "Q, ", out, "P", o.bootstrap > 0 ? ", $(out)Q_se" : "")
     return 0

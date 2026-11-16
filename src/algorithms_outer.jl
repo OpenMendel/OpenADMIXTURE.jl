@@ -34,7 +34,7 @@ function init_em!(d::AdmixData{T}, g::AbstractArray{T}, iter::Integer;
         else
             ll = loglikelihood(g, d.q, d.p, d.qp_small, d.K, d.skipmissing)
         end
-        println("EM Iteration $(i) ($(t.time) sec): Loglikelihood = $ll")
+        println("EM Iteration $(i) ($(t.time) sec): Loglikelihood = $ll"); flush(stdout)
     end
     if d_cu !== nothing
         copyto_sync!([d.p, d.q], [d_cu.p, d_cu.q])
@@ -162,6 +162,7 @@ function admixture_qn!(d::AdmixData{T}, g::AbstractArray{T}, iter::Int=1000,
                 "LogLikelihood = $(lls.new), reldiff = $(lls.reldiff)")
         ll_other = "Previous = $(lls.prev) QN = $(lls.qn), Basic = $(lls.basic)"
         println("    LogLikelihoods: $ll_other")
+        flush(stdout)  # keep the log complete if the process dies
         if verbose
             println("\n")
         end
