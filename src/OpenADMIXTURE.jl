@@ -1,13 +1,13 @@
 module OpenADMIXTURE
 using Random, LoopVectorization
-import LinearAlgebra: svd, norm, diag, mul!, dot
+import LinearAlgebra: svd, norm, diag, mul!, dot, SingularException, LAPACKException
 using SnpArrays
 using Base.Threads
 using SparseKmeansFeatureRanking
 export AdmixData
 using Requires, Adapt
-using Polyester
-using ProgressMeter, Suppressor, Formatting
+using ProgressMeter, Suppressor, Printf
+using StableRNGs
 function __init__()
     @require CUDA="052768ef-5323-5732-b1bb-66c8b64840ba" begin
         using .CUDA
@@ -26,4 +26,9 @@ include("loops.jl")
 include("algorithms_inner.jl")
 include("algorithms_outer.jl")
 include("driver.jl")
+include("cv.jl")
+include("onepop.jl")
+include("bootstrap.jl")
+include("cli.jl")
+include("precompile.jl")
 end

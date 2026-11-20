@@ -27,7 +27,28 @@ end
 Update one step of quasi-Newton algorithm.
 """
 function update_QN!(x_next, x_mapped, x, U, V)
-    x_next .= x_mapped .- V * (inv(U' * (U .- V)) * (U' * (x .- x_mapped)))
+    M = U' * (U .- V)
+    Minv = _safe_inv(M)
+    if Minv === nothing
+        # No usable secant information (e.g. steps of ~0 when started at the optimum):
+        # propose the plain EM step. The caller still keeps the better of this
+        # proposal and the basic two-step update.
+        x_next .= x_mapped
+    else
+        x_next .= x_mapped .- V * (Minv * (U' * (x .- x_mapped)))
+    end
+end
+
+# inv(M), or `nothing` if M or its inverse is not finite or M is singular.
+function _safe_inv(M)
+    all(isfinite, M) || return nothing
+    Minv = try
+        inv(M)
+    catch e
+        e isa Union{SingularException, LAPACKException} || rethrow()
+        return nothing
+    end
+    all(isfinite, Minv) ? Minv : nothing
 end
 
 """

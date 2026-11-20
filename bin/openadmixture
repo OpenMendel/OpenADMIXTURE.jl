@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# ADMIXTURE 1.3-compatible launcher for OpenADMIXTURE.jl:
+#   openadmixture [options] input.bed K
+# Julia fixes its thread count at start-up, so ADMIXTURE's -jN is read here and
+# passed to Julia as `-t N` (default 1 thread, like ADMIXTURE).
+set -euo pipefail
+
+src="${BASH_SOURCE[0]}"
+while [[ -L "$src" ]]; do  # follow symlinks, e.g. ~/bin/openadmixture -> repo/bin/openadmixture
+    dir="$(cd "$(dirname "$src")" && pwd)"
+    src="$(readlink "$src")"
+    [[ "$src" != /* ]] && src="$dir/$src"
+done
+project="$(cd "$(dirname "$src")/.." && pwd)"
+
+threads=1
+prev=""
+for a in "$@"; do
+    if [[ "$prev" == "-j" ]]; then
+        threads="$a"
+    elif [[ "$a" =~ ^-j([0-9]+)$ ]]; then
+        threads="${BASH_REMATCH[1]}"
+    fi
+    prev="$a"
+done
+
+exec julia --project="$project" --startup-file=no -t "$threads" \
+    -e 'using OpenADMIXTURE; exit(OpenADMIXTURE.main(ARGS))' -- "$@"

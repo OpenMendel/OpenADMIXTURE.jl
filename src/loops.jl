@@ -11,6 +11,15 @@ end
 tile_maxiter(::Type{AT}) where {AT} = TILE[] ÷ 8 # treat anything unkown like Float64
 
 """
+    nthread_buffers()
+
+Number of per-thread scratch buffers to allocate. Buffers are indexed by
+`threadid()`, which on Julia >= 1.9 can exceed `nthreads()` (interactive threads,
+on by default since Julia 1.12), so size them with `maxthreadid()`.
+"""
+nthread_buffers() = isdefined(Threads, :maxthreadid) ? Threads.maxthreadid() : Threads.nthreads()
+
+"""
 Split the index space into two pieces.
 """
 @inline function findcleft(r::UnitRange, step::Int)

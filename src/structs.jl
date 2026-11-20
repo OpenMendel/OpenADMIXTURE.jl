@@ -91,6 +91,23 @@ mutable struct AdmixData{T}
 end
 
 """
+    alias_columns(x, offset, dims)
+
+Array of size `dims` sharing the memory of `x` from linear index `offset + 1`
+(e.g. the Q or P block of the parameter matrix `x`). On Julia ≥ 1.11 the result
+keeps the memory of `x` alive. `unsafe_wrap` did not: once an `AdmixData` was
+unreachable the GC freed `x` while `d.q`/`d.p` still pointed into it, so a
+caller holding only `d.q` (e.g. `cv_error(g, K, d.q, d.p)`) read reused memory.
+"""
+function alias_columns(x::Matrix{T}, offset::Integer, dims::Dims{2}) where T
+    @static if VERSION >= v"1.11"
+        Base.wrap(Array, memoryref(x.ref, offset + 1), dims)
+    else
+        unsafe_wrap(Array, pointer(x, offset + 1), dims)  # caller must keep `x` alive
+    end
+end
+
+"""
     AdmixData{T}(I, J, K, Q; skipmissing=true, rng=Random.GLOBAL_RNG)
 Constructor for Admixture information.
 
@@ -103,7 +120,7 @@ Constructor for Admixture information.
 - rng: Random number generation.
 """
 function AdmixData{T}(I, J, K, Q; skipmissing=true, rng=Random.GLOBAL_RNG) where T
-    NT = nthreads()
+    NT = nthread_buffers()
     x = convert(Array{T}, rand(rng, K, I + J))
     x_next = similar(x)
     x_next2 = similar(x)
@@ -117,24 +134,16 @@ function AdmixData{T}(I, J, K, Q; skipmissing=true, rng=Random.GLOBAL_RNG) where
     x_qq = similar(x_flat)
     x_rr = similar(x_flat)
 
-    q       = view(x      , :, 1:I)#rand(T, K, J) 
-    q       = unsafe_wrap(Array, pointer(q), size(q))
-    q_next  = view(x_next , :, 1:I)
-    q_next  = unsafe_wrap(Array, pointer(q_next), size(q_next))
-    q_next2 = view(x_next2, :, 1:I)
-    q_next2  = unsafe_wrap(Array, pointer(q_next2), size(q_next2))
-    q_tmp   = view(x_tmp, :, 1:I)
-    q_tmp  = unsafe_wrap(Array, pointer(q_tmp), size(q_tmp))
+    q = alias_columns(x, 0, (K, I))
+    q_next = alias_columns(x_next, 0, (K, I))
+    q_next2 = alias_columns(x_next2, 0, (K, I))
+    q_tmp = alias_columns(x_tmp, 0, (K, I))
     q ./= sum(q, dims=1)
 
-    p       = view(x      , :, (I+1):(I+J))#rand(T, K, J) 
-    p       = unsafe_wrap(Array, pointer(p), size(p))
-    p_next  = view(x_next , :, (I+1):(I+J))
-    p_next  = unsafe_wrap(Array, pointer(p_next), size(p_next))
-    p_next2 = view(x_next2, :, (I+1):(I+J))
-    p_next2 = unsafe_wrap(Array, pointer(p_next2), size(p_next2))
-    p_tmp   = view(x_tmp, :, (I+1):(I+J))
-    p_tmp   = unsafe_wrap(Array, pointer(p_tmp), size(p_tmp))
+    p = alias_columns(x, K * I, (K, J))
+    p_next = alias_columns(x_next, K * I, (K, J))
+    p_next2 = alias_columns(x_next2, K * I, (K, J))
+    p_tmp = alias_columns(x_tmp, K * I, (K, J))
 
     XtX_q = convert(Array{T}, rand(rng, K, K, I))
     Xtz_q = convert(Array{T}, rand(rng, K, I))
@@ -166,7 +175,10 @@ function AdmixData{T}(I, J, K, Q; skipmissing=true, rng=Random.GLOBAL_RNG) where
 
     # qf = rand(T, I, J);
     maxL = tile_maxiter(typeof(Xtz_p))
-    qp_small = convert(Array{T}, rand(rng, maxL, maxL, NT))
+    # Scratch space, overwritten before use. Do not draw it from `rng`: its size
+    # depends on the thread count and would shift every later draw (U, V), making
+    # results depend on the number of threads.
+    qp_small = zeros(T, maxL, maxL, NT)
     qp_smallv = [view(qp_small, :, :, t) for t in 1:NT]
     # qf_thin  = rand(T, I, maxL)
     # f_tmp = similar(f)

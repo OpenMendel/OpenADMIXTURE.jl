@@ -34,7 +34,7 @@ function init_em!(d::AdmixData{T}, g::AbstractArray{T}, iter::Integer;
         else
             ll = loglikelihood(g, d.q, d.p, d.qp_small, d.K, d.skipmissing)
         end
-        println("EM Iteration $(i) ($(t.time) sec): Loglikelihood = $ll")
+        println("EM Iteration $(i) ($(t.time) sec): Loglikelihood = $ll"); flush(stdout)
     end
     if d_cu !== nothing
         copyto_sync!([d.p, d.q], [d_cu.p, d_cu.q])
@@ -54,6 +54,7 @@ Initialize P and Q with the FRAPPE EM algorithm
 - `g`: a genotype matrix.
 - `iter`: number of iterations.
 - `rtol`: convergence tolerance in terms of relative change of loglikelihood.
+- `atol`: if given, stop when the absolute change of loglikelihood is below `atol` (ADMIXTURE `-C`); overrides `rtol`.
 - `d_cu`: a `CuAdmixData` if using GPU, `nothing` otherwise.
 - `g_cu`: a `CuMatrix{UInt8}` corresponding to the data part of genotype matrix
 - `mode`: `:ZAL` for Zhou-Alexander-Lange acceleration (2009), `:LBQN` for Agarwal-Xu (2020).
@@ -61,7 +62,7 @@ Initialize P and Q with the FRAPPE EM algorithm
 - `progress_bar`: Show progress bar while executing.
 """
 function admixture_qn!(d::AdmixData{T}, g::AbstractArray{T}, iter::Int=1000, 
-    rtol= 1e-7; d_cu=nothing, g_cu=nothing, mode=:ZAL, iter_count_offset=0, fix_p=false, fix_q=false,
+    rtol= 1e-7; d_cu=nothing, g_cu=nothing, mode=:ZAL, iter_count_offset=0, fix_p=false, fix_q=false, atol=nothing,
     verbose=false, progress_bar=false) where T
     # qf!(d.qf, d.q, d.f)
     # ll_prev = loglikelihood(g, d.q, d.f, d.qp_small, d.K, d.skipmissing)
@@ -71,7 +72,6 @@ function admixture_qn!(d::AdmixData{T}, g::AbstractArray{T}, iter::Int=1000,
     p = Progress(iter, dt=0.5, desc="Running main algorithm",
         barglyphs=BarGlyphs('|','█', bgpartial,' ','|'),
         barlen=50, showspeed=true, enabled=progress_bar);
-    fspec = FormatSpec(".4e")
 
     if isnan(d.ll_new)
         if d_cu !== nothing
@@ -162,10 +162,11 @@ function admixture_qn!(d::AdmixData{T}, g::AbstractArray{T}, iter::Int=1000,
                 "LogLikelihood = $(lls.new), reldiff = $(lls.reldiff)")
         ll_other = "Previous = $(lls.prev) QN = $(lls.qn), Basic = $(lls.basic)"
         println("    LogLikelihoods: $ll_other")
+        flush(stdout)  # keep the log complete if the process dies
         if verbose
             println("\n")
         end
-        last_vals = map((x) -> fmt(fspec, x),
+        last_vals = map((x) -> @sprintf("%.4e", x),
                         llhist[end-min(length(llhist)-1, 5):end])
         ProgressMeter.next!(p;
             showvalues = [
@@ -179,7 +180,7 @@ function admixture_qn!(d::AdmixData{T}, g::AbstractArray{T}, iter::Int=1000,
                 (Symbol("LogLikelihood ↗"),lls.reldiff),
                 (Symbol("Past LogLikelihoods"),last_vals)])
         push!(llhist, lls.new)
-        if lls.reldiff < rtol
+        if (atol === nothing ? lls.reldiff < rtol : abs(lls.new - lls.prev) < atol)
             converged = true
             ProgressMeter.finish!(p)
             break

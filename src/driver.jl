@@ -126,13 +126,28 @@ function _filter_SKFR(filename, K, sparsities::AbstractVector{<:Integer};
     outputfiles, clusters, aims
 end
 
-function _admixture_base(filename, K; 
-    n_iter=1000, 
-    rtol=1e-7, 
+function _admixture_base(filename::AbstractString, K; kwargs...)
+    println("Loading genotype data...")
+    _admixture_base(SnpArray(filename), K; kwargs...)
+end
+
+"""
+    _admixture_base(g::SnpArray, K; kwargs...)
+
+Fit the model on a genotype matrix already in memory (e.g. a cross-validation
+fold with masked genotypes, or a bootstrap resample).
+
+`atol`: if not `nothing`, stop when the absolute change of the log-likelihood
+between iterations is below `atol` (ADMIXTURE's `-C ε`), instead of using `rtol`.
+"""
+function _admixture_base(g::SnpArray, K;
+    n_iter=1000,
+    rtol=1e-7,
+    atol=nothing,
     rng=Random.GLOBAL_RNG,
-    em_iters = 5, 
-    T=Float64, 
-    Q=3, 
+    em_iters = 5,
+    T=Float64,
+    Q=3,
     use_gpu=false,
     verbose=false,
     progress_bar=true,
@@ -140,8 +155,6 @@ function _admixture_base(filename, K;
     fix_p=false,
     init_q=nothing,
     init_p=nothing)
-    println("Loading genotype data...")
-    g = SnpArray(filename)
     g_la = SnpLinAlg{T}(g)
     I = size(g_la, 1)
     J = size(g_la, 2)
@@ -168,12 +181,12 @@ function _admixture_base(filename, K;
             messages = @capture_out admixture_qn!(d, g_la, n_iter, rtol;
                 d_cu = d_cu, g_cu = g_cu, mode=:ZAL,
                 verbose=verbose, progress_bar=true,
-                fix_q=fix_q, fix_p=fix_p)
+                fix_q=fix_q, fix_p=fix_p, atol=atol)
             println(messages)
         else
             admixture_qn!(d, g_la, n_iter, rtol;
                 d_cu = d_cu, g_cu = g_cu, mode=:ZAL,
-                fix_q=fix_q, fix_p=fix_p,
+                fix_q=fix_q, fix_p=fix_p, atol=atol,
                 verbose=verbose)
         end
     else
@@ -189,12 +202,12 @@ function _admixture_base(filename, K;
         if progress_bar
             messages = @capture_out admixture_qn!(d, g_la, n_iter, rtol;
                 d_cu = d_cu, g_cu = g_cu, mode=:ZAL, progress_bar=true,
-                fix_q=fix_q, fix_p=fix_p)
+                fix_q=fix_q, fix_p=fix_p, atol=atol)
             println(messages)
         else
             admixture_qn!(d, g_la, n_iter, rtol;
                 d_cu = d_cu, g_cu = g_cu, mode=:ZAL,
-                fix_q=fix_q, fix_p=fix_p,
+                fix_q=fix_q, fix_p=fix_p, atol=atol,
                 verbose=verbose)
         end
     end
